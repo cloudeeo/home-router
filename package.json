@@ -1,0 +1,22 @@
+{
+  "name": "home-router",
+  "version": "0.1.0",
+  "description": "A home assistant router on QVAC: a small decision model (Laya) routes each request in ~0.25 s, and nothing leaves the house without asking.",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "node server/index.js",
+    "mock": "MOCK=1 node server/index.js",
+    "eval": "node scripts/route-eval.js",
+    "web:dev": "cd web && npm run dev",
+    "web:build": "cd web && npm install && npm run build"
+  },
+  "engines": {
+    "node": "^22.21.0 || >=24.9.0"
+  },
+  "dependencies": {
+    "@qvac/sdk": "^0.22.0"
+  },
+  "author": "Claudio Alberti",
+  "license": "MIT"
+}
