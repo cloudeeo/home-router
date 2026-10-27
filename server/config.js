@@ -33,6 +33,9 @@ export const config = {
   embedModel: env.EMBED_MODEL || 'EMBEDDINGGEMMA_300M_Q8_0',
   embedDevice: env.EMBED_DEVICE || 'cpu',
   docsDir: env.DOCS_DIR || new URL('../docs/', import.meta.url).pathname,
+  // When Laya is unsure, a document passage at least this similar to the question (cosine) is used to answer.
+  // The [router] log line prints the best match for each unsure request, to calibrate it.
+  docScore: Number(env.DOC_SCORE || 0.5),
 
   // The LLM is the qvac serve instance already running on the same machine (OpenAI-compatible API)
   llmUrl: (env.LLM_URL || 'http://127.0.0.1:11434/v1').replace(/\/$/, ''),

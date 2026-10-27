@@ -105,6 +105,7 @@ Rebuild the web app after changing it: `npm run web:build`.
 | `SEARCH` | `mock` | `mock` (labelled placeholder), `searxng` (self-hosted SearXNG) or `ddg` (DuckDuckGo Instant Answer API, facts only) |
 | `SEARXNG_URL` | `http://127.0.0.1:8888` | SearXNG instance used when `SEARCH=searxng` |
 | `DOCS_DIR` | `./docs` | Folder of Markdown documents |
+| `DOC_SCORE` | `0.5` | When Laya is unsure, a document passage at least this similar (cosine) is used to answer; the `[router]` log line prints the best match |
 | `PORT` / `HOST` | `8090` / `127.0.0.1` | Where the router listens |
 
 ## Limits
