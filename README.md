@@ -8,7 +8,7 @@ A home assistant that decides before it writes. Every request first goes through
 | **document** | Searches the user's documents on the same server and answers with the source | local |
 | **search** | Asks the user before anything leaves the house, then searches once | local |
 | **chat** | Answered by the local LLM | local |
-| *unsure* | Below the confidence threshold: answered by the local LLM, nothing switched, nothing sent online | local |
+| *unsure* | Below the confidence threshold, the fallback follows the cost of a mistake: a likely search still asks permission first, a likely document question searches the local files (nothing leaves the house), anything else goes to the local LLM and nothing is switched | local |
 
 Everything runs on one home server. The phone only opens a web page.
 
