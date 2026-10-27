@@ -72,11 +72,12 @@ function askSearchPermission(text, emit, t0, reason) {
 async function answerFromDocs(text, emit, t0, reason, unsure, found) {
   emit('route', { route: 'document', reason })
   const hits = found || (await searchDocs(text))
-  emit('sources', hits.map((h) => ({ title: h.title, doc: h.doc, score: Number(h.score.toFixed(3)), snippet: h.text.replace(/^#+\s.*$/gm, '').trim().slice(0, 220) })))
-  const context = hits.map((h, i) => `[${i + 1}] ${h.title}\n${h.text}`).join('\n\n')
+  emit('sources', hits.map((h) => ({ title: h.title, doc: h.doc, url: `/api/docs/${encodeURIComponent(h.doc)}`, score: Number(h.score.toFixed(3)), snippet: h.text.replace(/^#+\s.*$/gm, '').trim().slice(0, 220) })))
+  const context = hits.map((h) => `Document: ${h.title}\n${h.text}`).join('\n\n')
+  const cite = 'Name the document by its title, for example "according to your Car insurance policy"; never cite by number.'
   const rule = unsure
-    ? 'If the excerpts answer the question, answer from them and name the document. If they are not relevant, ignore them and answer normally.'
-    : 'Answer using only these excerpts. Name the document you used. If the answer is not there, say so.'
+    ? `If the excerpts answer the question, answer from them. ${cite} If they are not relevant, ignore them and answer normally.`
+    : `Answer using only these excerpts. ${cite} If the answer is not there, say so.`
   const prompt = `The user asked a home assistant a question. These are excerpts from the user's own documents. ${rule}\n\nExcerpts:\n${context}\n\nQuestion: ${text}`
   return answerWithLlm(prompt, emit, t0)
 }
@@ -105,8 +106,8 @@ export async function handleSearchDecision(id, allow, emit) {
     return
   }
   emit('sources', results.map((r) => ({ title: r.title, url: r.url, snippet: r.text.slice(0, 220) })))
-  const context = results.map((r, i) => `[${i + 1}] ${r.title}: ${r.text}`).join('\n')
-  const prompt = `Answer the question using these web search results. Say which source you used. If they do not answer it, say so: do not guess live information such as times, scores or prices.\n\nSearch results:\n${context}\n\nQuestion: ${item.query}`
+  const context = results.map((r) => `Source: ${r.title}\n${r.text}`).join('\n\n')
+  const prompt = `Answer the question using these web search results. Name the source you used by its title; never cite by number. If they do not answer it, say so: do not guess live information such as times, scores or prices.\n\nSearch results:\n${context}\n\nQuestion: ${item.query}`
   return answerWithLlm(prompt, emit, t0)
 }
 

@@ -51,6 +51,16 @@ function serveStatic(req, res) {
   fs.createReadStream(file).pipe(res)
 }
 
+// GET /api/docs/<file>.md: the source document itself, so a cited source can be opened from the app
+function serveDoc(req, res) {
+  const name = decodeURIComponent(new URL(req.url, 'http://x').pathname.slice('/api/docs/'.length))
+  if (!/^[\w.-]+\.md$/.test(name)) return json(res, 400, { error: 'Bad document name' })
+  const file = path.join(config.docsDir, name)
+  if (!fs.existsSync(file)) return json(res, 404, { error: 'Document not found' })
+  res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' })
+  fs.createReadStream(file).pipe(res)
+}
+
 async function stream(res, run) {
   const emit = sse(res)
   try {
@@ -82,6 +92,7 @@ const server = http.createServer(async (req, res) => {
       const { id, allow } = await readBody(req)
       return stream(res, (emit) => handleSearchDecision(id, Boolean(allow), emit))
     }
+    if (req.method === 'GET' && req.url.startsWith('/api/docs/')) return serveDoc(req, res)
     if (req.method === 'GET') return serveStatic(req, res)
     json(res, 404, { error: 'Not found' })
   } catch (err) {

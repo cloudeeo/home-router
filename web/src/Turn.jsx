@@ -36,10 +36,11 @@ function Sources({ sources }) {
   return (
     <div className="sources">
       <div className="source">
-        <strong>{first.title}</strong>
         {first.url ? (
-          <a href={first.url} target="_blank" rel="noreferrer">{first.url}</a>
-        ) : null}
+          <a href={first.url} target="_blank" rel="noreferrer"><strong>{first.title}</strong></a>
+        ) : (
+          <strong>{first.title}</strong>
+        )}
         <span>{first.snippet}</span>
       </div>
       {rest.length > 0 && <p className="more-sources">Also checked: {rest.join(', ')}</p>}
