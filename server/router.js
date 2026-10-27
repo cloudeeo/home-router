@@ -10,6 +10,7 @@ import { applyCommand, home } from './home.js'
 import { searchDocs } from './docs.js'
 import { webSearch } from './search.js'
 import { streamChat } from './llm.js'
+import { config } from './config.js'
 
 const pending = new Map() // search id -> { query, created }
 
@@ -27,8 +28,13 @@ export async function handleRequest(text, emit) {
     if (decision.intent === 'search') {
       return askSearchPermission(text, emit, t0, `Probably needs the web (${pct}%, below the threshold): asking first`)
     }
-    if (decision.intent === 'document') {
-      return answerFromDocs(text, emit, t0, `Probably about your documents (${pct}%, below the threshold): searching them on this server`, true)
+    // Searching the local documents is cheap and stays in the house, so an unsure request is checked against
+    // them too: if a passage is close enough (DOC_SCORE), the answer uses it, whatever Laya's top guess was.
+    const hits = await searchDocs(text)
+    const best = hits[0]?.score ?? 0
+    console.log(`[router] unsure (${decision.intent} ${pct}%), best document match ${best.toFixed(3)} ("${hits[0]?.title}")`)
+    if (decision.intent === 'document' || best >= config.docScore) {
+      return answerFromDocs(text, emit, t0, `Unsure (${pct}%), but a document matches (${best.toFixed(2)}): answering from your files on this server`, true, hits)
     }
     emit('route', { route: 'llm', reason: `Confidence ${pct}% is below the threshold: answered by the local LLM, nothing switched or sent online` })
     return answerWithLlm(text, emit, t0)
@@ -63,9 +69,9 @@ function askSearchPermission(text, emit, t0, reason) {
   emit('done', { totalMs: Math.round(performance.now() - t0), waiting: true })
 }
 
-async function answerFromDocs(text, emit, t0, reason, unsure) {
+async function answerFromDocs(text, emit, t0, reason, unsure, found) {
   emit('route', { route: 'document', reason })
-  const hits = await searchDocs(text)
+  const hits = found || (await searchDocs(text))
   emit('sources', hits.map((h) => ({ title: h.title, doc: h.doc, score: Number(h.score.toFixed(3)), snippet: h.text.replace(/^#+\s.*$/gm, '').trim().slice(0, 220) })))
   const context = hits.map((h, i) => `[${i + 1}] ${h.title}\n${h.text}`).join('\n\n')
   const rule = unsure
