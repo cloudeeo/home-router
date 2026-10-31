@@ -3,8 +3,13 @@
 import { config } from './config.js'
 
 const SYSTEM = 'You are a home assistant that runs entirely on a home server. Answer in at most four short sentences.'
+// Spoken replies: same language as the question, short, no markdown or lists, numbers written so they read well aloud
+export const VOICE_SYSTEM =
+  'You are a home assistant that runs entirely on a home server and answers by voice. ' +
+  'Always reply in the language of the question (Italian, French or English). ' +
+  'Use at most three short sentences, plain text only: no markdown, no lists, no emoji.'
 
-export async function streamChat({ messages, onToken }) {
+export async function streamChat({ messages, onToken, system = SYSTEM }) {
   if (config.mock) return mockStream(messages, onToken)
 
   const t0 = performance.now()
@@ -17,7 +22,7 @@ export async function streamChat({ messages, onToken }) {
     body: JSON.stringify({
       model: config.llmModel,
       stream: true,
-      messages: [{ role: 'system', content: SYSTEM }, ...withNoThink(messages)],
+      messages: [{ role: 'system', content: system }, ...withNoThink(messages)],
     }),
   })
   if (!res.ok) throw new Error(`LLM server returned ${res.status}: ${(await res.text()).slice(0, 200)}`)

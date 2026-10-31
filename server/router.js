@@ -9,12 +9,13 @@ import { classify, pickDevice } from './intents.js'
 import { applyCommand, home } from './home.js'
 import { searchDocs } from './docs.js'
 import { webSearch } from './search.js'
-import { streamChat } from './llm.js'
+import { streamChat, VOICE_SYSTEM } from './llm.js'
 import { config } from './config.js'
 
 const pending = new Map() // search id -> { query, created }
 
-export async function handleRequest(text, emit) {
+// opts.voice: the reply will be spoken, so the LLM answers short, in the language of the question
+export async function handleRequest(text, emit, opts = {}) {
   const t0 = performance.now()
   const decision = await classify(text)
   emit('decision', decision)
@@ -26,7 +27,7 @@ export async function handleRequest(text, emit) {
     // - document: searching local files is harmless and nothing leaves the house, so search them anyway
     // - action or chat: nothing is switched; the local LLM answers
     if (decision.intent === 'search') {
-      return askSearchPermission(text, emit, t0, `Probably needs the web (${pct}%, below the threshold): asking first`)
+      return askSearchPermission(text, emit, t0, `Probably needs the web (${pct}%, below the threshold): asking first`, opts)
     }
     // Searching the local documents is cheap and stays in the house, so an unsure request is checked against
     // them too: if a passage is close enough (DOC_SCORE), the answer uses it, whatever Laya's top guess was.
@@ -34,10 +35,10 @@ export async function handleRequest(text, emit) {
     const best = hits[0]?.score ?? 0
     console.log(`[router] unsure (${decision.intent} ${pct}%), best document match ${best.toFixed(3)} ("${hits[0]?.title}")`)
     if (decision.intent === 'document' || best >= config.docScore) {
-      return answerFromDocs(text, emit, t0, `Unsure (${pct}%), but a document matches (${best.toFixed(2)}): answering from your files on this server`, true, hits)
+      return answerFromDocs(text, emit, t0, `Unsure (${pct}%), but a document matches (${best.toFixed(2)}): answering from your files on this server`, true, hits, opts)
     }
     emit('route', { route: 'llm', reason: `Confidence ${pct}% is below the threshold: answered by the local LLM, nothing switched or sent online` })
-    return answerWithLlm(text, emit, t0)
+    return answerWithLlm(text, emit, t0, opts)
   }
 
   switch (decision.intent) {
@@ -46,30 +47,30 @@ export async function handleRequest(text, emit) {
       const result = applyCommand(device.device, text)
       const how = decision.device ? 'same decision' : `${device.ms} ms`
       emit('route', { route: 'action', reason: `Command for: ${device.device} (${(device.p * 100).toFixed(0)}%, ${how})` })
-      emit('action', { device: device.device, ok: result.ok, summary: result.summary })
+      emit('action', { device: device.device, ok: result.ok, summary: result.summary, facts: result.facts })
       emit('home', home)
       emit('done', { totalMs: Math.round(performance.now() - t0) })
       return
     }
     case 'search':
-      return askSearchPermission(text, emit, t0, 'Needs live information from the internet')
+      return askSearchPermission(text, emit, t0, 'Needs live information from the internet', opts)
     case 'document':
-      return answerFromDocs(text, emit, t0, 'Searching your documents on this server', false)
+      return answerFromDocs(text, emit, t0, 'Searching your documents on this server', false, null, opts)
     default:
       emit('route', { route: 'chat', reason: 'General question: answered by the local LLM' })
-      return answerWithLlm(text, emit, t0)
+      return answerWithLlm(text, emit, t0, opts)
   }
 }
 
-function askSearchPermission(text, emit, t0, reason) {
+function askSearchPermission(text, emit, t0, reason, opts = {}) {
   const id = crypto.randomUUID()
-  pending.set(id, { query: text, created: Date.now() })
+  pending.set(id, { query: text, created: Date.now(), voice: Boolean(opts.voice) })
   emit('route', { route: 'search', reason })
   emit('permission', { id, query: text, message: 'This request would leave your home network. Allow one web search?' })
   emit('done', { totalMs: Math.round(performance.now() - t0), waiting: true })
 }
 
-async function answerFromDocs(text, emit, t0, reason, unsure, found) {
+async function answerFromDocs(text, emit, t0, reason, unsure, found, opts = {}) {
   emit('route', { route: 'document', reason })
   const hits = found || (await searchDocs(text))
   emit('sources', hits.map((h) => ({ title: h.title, doc: h.doc, url: `/api/docs/${encodeURIComponent(h.doc)}`, score: Number(h.score.toFixed(3)), snippet: h.text.replace(/^#+\s.*$/gm, '').trim().slice(0, 220) })))
@@ -79,7 +80,7 @@ async function answerFromDocs(text, emit, t0, reason, unsure, found) {
     ? `If the excerpts answer the question, answer from them. ${cite} If they are not relevant, ignore them and answer normally.`
     : `Answer using only these excerpts. ${cite} If the answer is not there, say so.`
   const prompt = `The user asked a home assistant a question. These are excerpts from the user's own documents. ${rule}\n\nExcerpts:\n${context}\n\nQuestion: ${text}`
-  return answerWithLlm(prompt, emit, t0)
+  return answerWithLlm(prompt, emit, t0, opts)
 }
 
 export async function handleSearchDecision(id, allow, emit) {
@@ -107,13 +108,14 @@ export async function handleSearchDecision(id, allow, emit) {
   }
   emit('sources', results.map((r) => ({ title: r.title, url: r.url, snippet: r.text.slice(0, 220) })))
   const context = results.map((r) => `Source: ${r.title}\n${r.text}`).join('\n\n')
-  const prompt = `Answer the question using these web search results. Name the source you used by its title; never cite by number. If they do not answer it, say so: do not guess live information such as times, scores or prices.\n\nSearch results:\n${context}\n\nQuestion: ${item.query}`
-  return answerWithLlm(prompt, emit, t0)
+  const prompt = `Answer the question using these web search results. Name the source you used by its title; never cite by number. If they do not answer it, say so: do not guess live information such as times, scores or prices. Use metric units (°C, km/h).\n\nSearch results:\n${context}\n\nQuestion: ${item.query}`
+  return answerWithLlm(prompt, emit, t0, { voice: item.voice })
 }
 
-async function answerWithLlm(prompt, emit, t0) {
+async function answerWithLlm(prompt, emit, t0, opts = {}) {
   const stats = await streamChat({
     messages: [{ role: 'user', content: prompt }],
+    ...(opts.voice ? { system: VOICE_SYSTEM } : {}),
     onToken: (text) => emit('token', { text }),
   })
   emit('done', { totalMs: Math.round(performance.now() - t0), llm: stats })

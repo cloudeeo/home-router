@@ -4,3 +4,4 @@ web/node_modules/
 *.log
 *.pid
 api-key.txt
+__pycache__/

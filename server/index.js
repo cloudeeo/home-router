@@ -2,6 +2,7 @@
 //   GET  /api/state            home state and settings
 //   POST /api/ask      {text}  streams events: decision, route, action, home, permission, sources, token, done, error
 //   POST /api/search   {id, allow}  answers a pending permission request, streams the same events
+//   POST /api/voice    16 kHz mono WAV body  ->  JSON with transcript, reply text and reply audio (base64 WAV)
 import http from 'node:http'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -10,9 +11,24 @@ import { initModels, closeModels } from './qvac.js'
 import { indexDocs, docList } from './docs.js'
 import { handleRequest, handleSearchDecision } from './router.js'
 import { home } from './home.js'
+import { initVoice, closeVoice, handleVoice } from './voice.js'
 
 const WEB_DIR = new URL('../web/dist/', import.meta.url).pathname
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.json': 'application/json' }
+
+function readRaw(req, limit = 10e6) {
+  return new Promise((resolve, reject) => {
+    const chunks = []
+    let size = 0
+    req.on('data', (c) => {
+      size += c.length
+      if (size > limit) reject(new Error('Audio too large (10 MB max)'))
+      else chunks.push(c)
+    })
+    req.on('end', () => resolve(Buffer.concat(chunks)))
+    req.on('error', reject)
+  })
+}
 
 function readBody(req) {
   return new Promise((resolve, reject) => {
@@ -92,6 +108,15 @@ const server = http.createServer(async (req, res) => {
       const { id, allow } = await readBody(req)
       return stream(res, (emit) => handleSearchDecision(id, Boolean(allow), emit))
     }
+    if (req.method === 'POST' && req.url === '/api/voice') {
+      if (!config.voice) return json(res, 404, { error: 'Voice is turned off (VOICE=0)' })
+      const wav = await readRaw(req)
+      if (wav.length < 44 || wav.toString('ascii', 0, 4) !== 'RIFF') return json(res, 400, { error: 'Send a 16 kHz mono WAV file as the request body' })
+      const mockText = config.mock && req.headers['x-mock-transcript'] ? decodeURIComponent(req.headers['x-mock-transcript']) : undefined
+      const out = await handleVoice(wav, { mockText })
+      console.log(`voice [${out.lang}] "${out.transcript}" -> ${out.route ?? '-'} | stt ${out.timings.sttMs} ms, router ${out.timings.routerMs} ms, tts ${out.timings.ttsMs} ms`)
+      return json(res, 200, out)
+    }
     if (req.method === 'GET' && req.url.startsWith('/api/docs/')) return serveDoc(req, res)
     if (req.method === 'GET') return serveStatic(req, res)
     json(res, 404, { error: 'Not found' })
@@ -103,6 +128,7 @@ const server = http.createServer(async (req, res) => {
 
 await initModels()
 await indexDocs()
+await initVoice()
 server.listen(config.port, config.host, () => {
   console.log(`home-router listening on http://${config.host}:${config.port} | router ${config.routerModel} | threshold ${config.threshold} | LLM ${config.llmModel} at ${config.llmUrl} | search ${config.search}${config.mock ? ' | MOCK' : ''}`)
 })
@@ -110,6 +136,7 @@ server.listen(config.port, config.host, () => {
 for (const sig of ['SIGINT', 'SIGTERM']) {
   process.on(sig, async () => {
     server.close()
+    await closeVoice()
     await closeModels()
     process.exit(0)
   })

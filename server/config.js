@@ -42,6 +42,21 @@ export const config = {
   llmKey: readKey(),
   llmModel: env.LLM_MODEL || 'qwen4b',
 
+  // Voice (POST /api/voice): VOICE=0 turns it off. STT_MODEL is a QVAC registry constant or a local Whisper file
+  // (a local file skips the registry, which is useful when registry downloads time out).
+  voice: env.VOICE !== '0',
+  sttModel: env.STT_MODEL || 'WHISPER_SMALL_Q8_0',
+  sttLanguage: env.STT_LANG || 'auto',
+  sttThreads: Number(env.STT_THREADS || 8),
+  ttsModel: env.TTS_MODEL || 'TTS_MULTILINGUAL_SUPERTONIC3_Q8_0',
+  voiceLangs: (env.VOICE_LANGS || 'it,fr').split(',').map((s) => s.trim()),
+  // Supertonic voice and speed per language, e.g. VOICE_IT=M1:1.2
+  voices: Object.fromEntries(['it', 'fr', 'en'].map((l) => {
+    const [voice, speed] = (env[`VOICE_${l.toUpperCase()}`] || 'F1:1.2').split(':')
+    return [l, { voice, speed: Number(speed || 1.2) }]
+  })),
+  mockTranscript: env.MOCK_TRANSCRIPT || 'Accendi la luce in cucina',
+
   // Web search: 'mock' (labelled placeholder), 'searxng' (self-hosted SearXNG) or 'ddg' (DuckDuckGo Instant Answer API)
   search: env.SEARCH || 'mock',
   searxngUrl: (env.SEARXNG_URL || 'http://127.0.0.1:8888').replace(/\/$/, ''),

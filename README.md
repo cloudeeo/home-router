@@ -51,6 +51,26 @@ home-router (Node, this repo)  ── on the home server ───────�
 - `web/`: the React app (Vite). `web/dist/` is the built version served by the router.
 - `scripts/route-eval.js`: checks the router on the 40 labelled requests.
 
+## Voice: talk to it from any room
+
+`POST /api/voice` takes a recorded question (16 kHz mono WAV) and returns the spoken answer:
+
+1. **Whisper small** (QVAC SDK) turns speech into text, with the language detected automatically.
+2. The router above decides what to do, exactly as for typed requests.
+3. **Supertonic 3** (QVAC SDK) reads the answer aloud in the language of the question. Italian and French are loaded by default (`VOICE_LANGS=it,fr`).
+
+Home commands get a short spoken confirmation without any LLM call. A web search is still never done silently: the assistant asks out loud, and the next phrase ("sì", "oui", "yes" or "no") answers.
+
+`satellite/jarvis_satellite.py` turns any computer with a microphone and speakers into a room device. It listens for the wake word **"Hey Jarvis"** locally with [openWakeWord](https://github.com/dscripka/openWakeWord), records until you stop talking, sends that recording only, and plays the reply:
+
+```bash
+cd satellite
+pip install -r requirements.txt
+python jarvis_satellite.py --server https://<server>.<tailnet>.ts.net:8443
+```
+
+Voice settings: `STT_MODEL` (registry constant or a local Whisper file, default `WHISPER_SMALL_Q8_0`), `STT_LANG` (`auto`), `VOICE_LANGS` (`it,fr`), `VOICE_IT` / `VOICE_FR` / `VOICE_EN` (Supertonic voice and speed, e.g. `M1:1.2`), `VOICE=0` to turn voice off.
+
 ## Run it
 
 Requirements: Node `^22.21.0 || >=24.9.0`, a running `qvac serve --openai` with a Qwen3 4B model (named `qwen4b` here), about 1–1.5 GB of free RAM for Laya and the embedding model.
