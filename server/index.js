@@ -108,12 +108,13 @@ const server = http.createServer(async (req, res) => {
       const { id, allow } = await readBody(req)
       return stream(res, (emit) => handleSearchDecision(id, Boolean(allow), emit))
     }
-    if (req.method === 'POST' && req.url === '/api/voice') {
+    if (req.method === 'POST' && req.url.split('?')[0] === '/api/voice') {
       if (!config.voice) return json(res, 404, { error: 'Voice is turned off (VOICE=0)' })
       const wav = await readRaw(req)
       if (wav.length < 44 || wav.toString('ascii', 0, 4) !== 'RIFF') return json(res, 400, { error: 'Send a 16 kHz mono WAV file as the request body' })
       const mockText = config.mock && req.headers['x-mock-transcript'] ? decodeURIComponent(req.headers['x-mock-transcript']) : undefined
-      const out = await handleVoice(wav, { mockText })
+      const lang = new URL(req.url, 'http://x').searchParams.get('lang') || undefined
+      const out = await handleVoice(wav, { mockText, lang })
       console.log(`voice [${out.lang}] "${out.transcript}" -> ${out.route ?? '-'} | stt ${out.timings.sttMs} ms, router ${out.timings.routerMs} ms, tts ${out.timings.ttsMs} ms`)
       return json(res, 200, out)
     }

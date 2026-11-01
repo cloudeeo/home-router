@@ -46,7 +46,8 @@ export const config = {
   // (a local file skips the registry, which is useful when registry downloads time out).
   voice: env.VOICE !== '0',
   sttModel: env.STT_MODEL || 'WHISPER_SMALL_Q8_0',
-  sttLanguage: env.STT_LANG || 'auto',
+  // 'per-device' (default): one Whisper per language in VOICE_LANGS, chosen by ?lang=; 'auto': Whisper guesses
+  sttLanguage: env.STT_LANG || 'per-device',
   sttThreads: Number(env.STT_THREADS || 8),
   sttGpu: env.STT_GPU === '1',
   ttsModel: env.TTS_MODEL || 'TTS_MULTILINGUAL_SUPERTONIC3_Q8_0',
@@ -56,6 +57,8 @@ export const config = {
     const [voice, speed] = (env[`VOICE_${l.toUpperCase()}`] || 'F1:1.2').split(':')
     return [l, { voice, speed: Number(speed || 1.2) }]
   })),
+  // Home time zone, for the date and time given to the LLM and for direct clock answers
+  timeZone: env.TZ_NAME || 'Europe/Zurich',
   mockTranscript: env.MOCK_TRANSCRIPT || 'Accendi la luce in cucina',
 
   // Web search: 'mock' (labelled placeholder), 'searxng' (self-hosted SearXNG) or 'ddg' (DuckDuckGo Instant Answer API)

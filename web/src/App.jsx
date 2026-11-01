@@ -23,6 +23,24 @@ export default function App() {
   const [mic, setMic] = useState('idle') // idle | listening | thinking | speaking
   const [level, setLevel] = useState(0)
   const recording = useRef(null)
+  // The language spoken to this device: Whisper is told, instead of guessing from a few words
+  const [lang, setLang] = useState(() => {
+    try {
+      return localStorage.getItem('voiceLang') || 'it'
+    } catch {
+      return 'it'
+    }
+  })
+  const LANGS = ['it', 'fr']
+  function nextLang() {
+    const l = LANGS[(LANGS.indexOf(lang) + 1) % LANGS.length]
+    setLang(l)
+    try {
+      localStorage.setItem('voiceLang', l)
+    } catch {
+      // private mode: keep the choice for this page only
+    }
+  }
 
   useEffect(() => {
     fetchState().then(setState).catch((e) => setError(e.message))
@@ -108,7 +126,7 @@ export default function App() {
         ...all,
         { id, voice: true, question: '…', startedAt: performance.now(), routes: [], answer: '', sources: null, decision: null, action: null, permission: null, stats: {}, done: false },
       ])
-      const out = await postVoice(wav)
+      const out = await postVoice(wav, lang)
       const t = out.timings || {}
       update(id, (turn) => ({
         ...turn,
@@ -197,6 +215,9 @@ export default function App() {
             ask(input)
           }}
         >
+          <button type="button" className="lang" onClick={nextLang} disabled={mic !== 'idle'} title="Language you speak to the assistant" aria-label={`Spoken language: ${lang}, tap to change`}>
+            {lang.toUpperCase()}
+          </button>
           <button
             type="button"
             className={`mic ${mic}`}

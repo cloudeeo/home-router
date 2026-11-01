@@ -5,7 +5,7 @@ until you stop talking, sends that one recording to home-router's /api/voice on 
 spoken reply. Nothing leaves this machine before the wake word.
 
     pip install -r requirements.txt
-    python jarvis_satellite.py --server https://<server>.<tailnet>.ts.net:8443
+    python jarvis_satellite.py --server https://<server>.<tailnet>.ts.net:8443 --lang it
 
 Options: --threshold (wake word score, default 0.5), --device (microphone index, see --list-devices).
 """
@@ -77,8 +77,8 @@ def record_utterance(stream, vad, max_s=12.0, silence_ms=900, start_timeout_s=5.
     return np.concatenate(frames)
 
 
-def ask_server(server: str, wav: bytes) -> dict:
-    req = urllib.request.Request(f"{server.rstrip('/')}/api/voice", data=wav, headers={"Content-Type": "audio/wav"}, method="POST")
+def ask_server(server: str, wav: bytes, lang: str) -> dict:
+    req = urllib.request.Request(f"{server.rstrip('/')}/api/voice?lang={lang}", data=wav, headers={"Content-Type": "audio/wav"}, method="POST")
     with urllib.request.urlopen(req, timeout=120) as res:
         return json.loads(res.read())
 
@@ -86,6 +86,7 @@ def ask_server(server: str, wav: bytes) -> dict:
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--server", required=False, help="home-router base URL, e.g. https://server.tailnet.ts.net:8443")
+    p.add_argument("--lang", default="it", help="language spoken to this device: it, fr or en")
     p.add_argument("--wakeword", default="hey_jarvis")
     p.add_argument("--threshold", type=float, default=0.5)
     p.add_argument("--device", type=int, default=None, help="microphone index")
@@ -122,7 +123,7 @@ def main():
             t = time.time()
             beep(660, 80)
             try:
-                out = ask_server(args.server, to_wav(audio))
+                out = ask_server(args.server, to_wav(audio), args.lang)
             except Exception as err:  # keep listening even if the server is down
                 print(f"  server error: {err}")
                 follow_up = False

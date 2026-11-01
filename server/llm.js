@@ -7,11 +7,12 @@ const SYSTEM = 'You are a home assistant that runs entirely on a home server. An
 export const VOICE_SYSTEM =
   'You are a home assistant that runs entirely on a home server and answers by voice. ' +
   'Always reply in the language of the question (Italian, French or English). ' +
+  'Answer the question directly; never repeat or rephrase it, and do not ask it back. ' +
   'Use at most three short sentences, plain text only: no markdown, no lists, no emoji.'
 
 // The model has no clock: give it the local date and time with every request
 function now() {
-  const tz = process.env.TZ_NAME || 'Europe/Zurich'
+  const tz = config.timeZone
   const d = new Date()
   const date = d.toLocaleDateString('en-GB', { timeZone: tz, weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
   const time = d.toLocaleTimeString('en-GB', { timeZone: tz, hour: '2-digit', minute: '2-digit' })

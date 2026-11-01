@@ -1,6 +1,8 @@
 // Voice in and out for the router: Whisper turns the recorded question into text, the router answers,
 // and Supertonic reads the answer aloud in the language of the question (Italian, French or English).
-//   POST /api/voice  (body: 16 kHz mono WAV)  ->  { transcript, lang, route, reply, audio: base64 WAV, timings }
+//   POST /api/voice?lang=it  (body: 16 kHz mono WAV)  ->  { transcript, lang, route, reply, audio: base64 WAV, timings }
+// Each device says which language it speaks (?lang=it|fr|en, default: the first of VOICE_LANGS): Whisper's own
+// language detection is unreliable on short phrases such as "che ore sono". STT_LANG=auto brings detection back.
 // A web search still needs the user's OK: the assistant asks out loud, and the next request answers it
 // ("sì" / "oui" / "yes" allows one search, "no" / "non" keeps it at home).
 import fs from 'node:fs'
@@ -11,7 +13,7 @@ import { config } from './config.js'
 import { handleRequest, handleSearchDecision } from './router.js'
 
 let sdk = null
-let sttId = null
+const sttIds = {} // lang (or 'auto') -> Whisper modelId
 const ttsIds = {} // lang -> modelId
 
 export async function initVoice(log = console.log) {
@@ -21,19 +23,24 @@ export async function initVoice(log = console.log) {
     return
   }
   sdk = await import('@qvac/sdk')
-  let t = performance.now()
-  // A local file path or URL is loaded directly; a registry constant goes through the registry
+  let t
+  // A local file path or URL is loaded directly; a registry constant goes through the registry.
+  // Whisper's language is fixed at load time, so there is one instance per language (about 0.5 GB each).
   const sttSrc = sdk[config.sttModel] || config.sttModel
-  sttId = await sdk.loadModel({
-    modelSrc: sttSrc,
-    ...(sdk[config.sttModel] ? {} : { modelType: 'whispercpp-transcription' }),
-    modelConfig: {
-      language: config.sttLanguage, strategy: 'greedy', n_threads: config.sttThreads, temperature: 0, translate: false, no_timestamps: true,
-      // STT_GPU=1 runs Whisper on the graphics card, leaving the CPU to the LLM
-      contextParams: { use_gpu: config.sttGpu, flash_attn: config.sttGpu, gpu_device: 0 },
-    },
-  })
-  log(`Voice: speech recognition ${path.basename(String(config.sttModel))} on ${config.sttGpu ? 'GPU' : 'CPU'} loaded in ${((performance.now() - t) / 1000).toFixed(1)} s`)
+  const sttLangs = config.sttLanguage === 'auto' ? ['auto'] : config.voiceLangs
+  for (const lang of sttLangs) {
+    t = performance.now()
+    sttIds[lang] = await sdk.loadModel({
+      modelSrc: sttSrc,
+      ...(sdk[config.sttModel] ? {} : { modelType: 'whispercpp-transcription' }),
+      modelConfig: {
+        language: lang, strategy: 'greedy', n_threads: config.sttThreads, temperature: 0, translate: false, no_timestamps: true,
+        // STT_GPU=1 runs Whisper on the graphics card, leaving the CPU to the LLM
+        contextParams: { use_gpu: config.sttGpu, flash_attn: config.sttGpu, gpu_device: 0 },
+      },
+    })
+    log(`Voice: speech recognition (${lang}) ${path.basename(String(config.sttModel))} on ${config.sttGpu ? 'GPU' : 'CPU'} loaded in ${((performance.now() - t) / 1000).toFixed(1)} s`)
+  }
   for (const lang of config.voiceLangs) {
     t = performance.now()
     const v = config.voices[lang] || { voice: 'F1', speed: 1.15 }
@@ -47,12 +54,12 @@ export async function initVoice(log = console.log) {
 
 export async function closeVoice() {
   if (!sdk) return
-  for (const id of [sttId, ...Object.values(ttsIds)]) if (id) await sdk.unloadModel({ modelId: id })
+  for (const id of [...Object.values(sttIds), ...Object.values(ttsIds)]) if (id) await sdk.unloadModel({ modelId: id })
 }
 
 // ---- language -------------------------------------------------------------
 
-// Whisper is run with language "auto"; the transcript's own words tell us which voice to answer with.
+// Only used with STT_LANG=auto: the transcript's own words tell us which voice to answer with.
 const MARKERS = {
   it: /\b(il|lo|la|gli|che|di|per|non|sono|accendi|spegni|cosa|quanto|come|dove|perch[eé]|ricordami|aiutami|della|nella|questo|grazie|si|sì)\b/g,
   fr: /\b(le|les|des|une|est|pas|que|qui|pour|dans|allume|[ée]teins|combien|comment|quoi|pourquoi|rappelle|merci|oui|je|tu|vous|du|au)\b/g,
@@ -132,13 +139,13 @@ function wavFromInt16(samples, rate) {
   return Buffer.concat([h, data])
 }
 
-async function transcribeWav(wav, mockText) {
+async function transcribeWav(wav, lang, mockText) {
   if (config.mock) return mockText || config.mockTranscript
   // The SDK reads audio from a file path
   const file = path.join(os.tmpdir(), `home-router-${crypto.randomUUID()}.wav`)
   fs.writeFileSync(file, wav)
   try {
-    const out = await sdk.transcribe({ modelId: sttId, audioChunk: file })
+    const out = await sdk.transcribe({ modelId: sttIds[lang] || sttIds.auto || Object.values(sttIds)[0], audioChunk: file })
     return (Array.isArray(out) ? out.map((s) => s.text ?? s).join('') : String(out)).trim()
   } finally {
     fs.rmSync(file, { force: true })
@@ -164,15 +171,17 @@ async function speak(text, lang) {
 
 // ---- the request ------------------------------------------------------------
 
-// opts.mockText (MOCK mode only): the transcript to pretend Whisper heard, for tests
+// opts.lang: the language this device speaks; opts.mockText (MOCK mode only): the transcript to pretend Whisper heard
 export async function handleVoice(wav, opts = {}) {
   const t0 = performance.now()
   const timings = {}
 
   let t = performance.now()
-  const transcript = await transcribeWav(wav, opts.mockText)
+  const asked = config.voiceLangs.includes(opts.lang) ? opts.lang : config.voiceLangs[0]
+  const auto = config.sttLanguage === 'auto'
+  const transcript = await transcribeWav(wav, auto ? 'auto' : asked, opts.mockText)
   timings.sttMs = Math.round(performance.now() - t)
-  const lang = transcript ? detectLang(transcript) : config.voiceLangs[0]
+  const lang = auto && transcript ? detectLang(transcript) : asked
 
   // Collect what the router emits
   const events = { reply: '', route: null, decision: null, action: null, permission: null, sources: [], error: null }

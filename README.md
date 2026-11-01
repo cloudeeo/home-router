@@ -55,21 +55,21 @@ home-router (Node, this repo)  ── on the home server ───────�
 
 `POST /api/voice` takes a recorded question (16 kHz mono WAV) and returns the spoken answer:
 
-1. **Whisper small** (QVAC SDK) turns speech into text, with the language detected automatically.
+1. **Whisper small** (QVAC SDK) turns speech into text. Each device says which language it speaks (`/api/voice?lang=it` or `fr`): Whisper's own language detection proved unreliable on short phrases such as "che ore sono", so one Whisper instance is loaded per language.
 2. The router above decides what to do, exactly as for typed requests.
 3. **Supertonic 3** (QVAC SDK) reads the answer aloud in the language of the question. Italian and French are loaded by default (`VOICE_LANGS=it,fr`).
 
-Home commands get a short spoken confirmation without any LLM call. A web search is still never done silently: the assistant asks out loud, and the next phrase ("sì", "oui", "yes" or "no") answers.
+Home commands get a short spoken confirmation without any LLM call. Time and date questions ("che ore sono a New York?", "quel jour sommes-nous ?") are answered from the server clock (`server/clock.js`, home zone `TZ_NAME`, default `Europe/Zurich`): a 4B model took about 2.5 s for them and got time zones wrong. A web search is still never done silently: the assistant asks out loud, and the next phrase ("sì", "oui", "yes" or "no") answers.
 
 `satellite/jarvis_satellite.py` turns any computer with a microphone and speakers into a room device. It listens for the wake word **"Hey Jarvis"** locally with [openWakeWord](https://github.com/dscripka/openWakeWord), records until you stop talking, sends that recording only, and plays the reply:
 
 ```bash
 cd satellite
 pip install -r requirements.txt
-python jarvis_satellite.py --server https://<server>.<tailnet>.ts.net:8443
+python jarvis_satellite.py --server https://<server>.<tailnet>.ts.net:8443 --lang it
 ```
 
-Voice settings: `STT_MODEL` (registry constant or a local Whisper file, default `WHISPER_SMALL_Q8_0`), `STT_LANG` (`auto`), `STT_GPU` (`1` runs Whisper on the graphics card), `STT_THREADS` (`8`), `VOICE_LANGS` (`it,fr`), `VOICE_IT` / `VOICE_FR` / `VOICE_EN` (Supertonic voice and speed, e.g. `M1:1.2`), `VOICE=0` to turn voice off.
+Voice settings: `STT_MODEL` (registry constant or a local Whisper file, default `WHISPER_SMALL_Q8_0`), `STT_LANG` (`per-device`, or `auto` to let Whisper guess), `STT_GPU` (`1` runs Whisper on the graphics card), `STT_THREADS` (`8`), `VOICE_LANGS` (`it,fr`), `VOICE_IT` / `VOICE_FR` / `VOICE_EN` (Supertonic voice and speed, e.g. `M1:1.2`), `VOICE=0` to turn voice off.
 
 ## Run it
 

@@ -11,12 +11,21 @@ import { searchDocs } from './docs.js'
 import { webSearch } from './search.js'
 import { streamChat, VOICE_SYSTEM } from './llm.js'
 import { config } from './config.js'
+import { clockAnswer } from './clock.js'
 
 const pending = new Map() // search id -> { query, created }
 
 // opts.voice: the reply will be spoken, so the LLM answers short, in the language of the question
 export async function handleRequest(text, emit, opts = {}) {
   const t0 = performance.now()
+  // Time and date questions are answered from the server clock: exact, instant, no model call
+  const clock = clockAnswer(text)
+  if (clock) {
+    emit('route', { route: 'clock', reason: 'Time or date question: answered from the server clock, no model call' })
+    emit('token', { text: clock })
+    emit('done', { totalMs: Math.round(performance.now() - t0) })
+    return
+  }
   const decision = await classify(text)
   emit('decision', decision)
 
