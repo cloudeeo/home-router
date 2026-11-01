@@ -1,7 +1,7 @@
 const ORDER = ['action', 'search', 'document', 'chat']
 
 function DecisionCard({ decision, routes }) {
-  if (!decision) return <div className="decision pending">Deciding…</div>
+  if (!decision) return routes.length ? <div className="decision">{routes.map((r, i) => <p key={i} className="reason">{r.reason}</p>)}</div> : <div className="decision pending">Deciding…</div>
   const route = routes[0]?.route
   const fallback = route === 'llm'
   return (
@@ -69,7 +69,7 @@ export default function Turn({ turn, onPermission }) {
   const firstWord = turn.firstTokenAt ? ((turn.firstTokenAt - turn.startedAt) / 1000).toFixed(1) : null
   return (
     <section className="turn">
-      <p className="question">{turn.question}</p>
+      <p className="question">{turn.voice && <span className="voice-mark" aria-label="spoken">🎙 </span>}{turn.question}</p>
       <div className="reply">
         <DecisionCard decision={turn.decision} routes={turn.routes} />
         {turn.action && <p className={`action-done ${turn.action.ok ? 'ok' : 'ko'}`}>{turn.action.summary}</p>}

@@ -40,3 +40,11 @@ export async function fetchState() {
   if (!res.ok) throw new Error(`Server returned ${res.status}`)
   return res.json()
 }
+
+// Sends one recorded request (16 kHz mono WAV) and returns the transcript, the reply and the reply audio.
+export async function postVoice(wav) {
+  const res = await fetch('/api/voice', { method: 'POST', headers: { 'Content-Type': 'audio/wav' }, body: wav })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(data.error || `Server returned ${res.status}`)
+  return data
+}

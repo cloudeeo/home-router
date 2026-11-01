@@ -128,3 +128,10 @@ form { display: flex; gap: 8px; }
 form input { flex: 1; min-width: 0; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--card); color: var(--text); font-size: 16px; }
 form button { padding: 0 18px; border-radius: 12px; border: none; background: var(--ink); color: var(--bg); font-weight: 600; }
 
+
+/* Microphone button: grows a ring with the input level while listening */
+form .mic { flex: none; width: 46px; padding: 0; border-radius: 999px; background: var(--card); color: var(--text); border: 1px solid var(--line); display: grid; place-items: center; transition: box-shadow 80ms linear; }
+form .mic svg { width: 22px; height: 22px; }
+form .mic.listening { background: var(--search); color: #fff; border-color: var(--search); box-shadow: 0 0 0 calc(3px + var(--level) * 10px) color-mix(in srgb, var(--search) 30%, transparent); }
+form .mic.thinking, form .mic.speaking { background: var(--ink); color: var(--bg); }
+.voice-mark { opacity: 0.7; }

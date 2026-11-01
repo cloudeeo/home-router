@@ -48,6 +48,7 @@ export const config = {
   sttModel: env.STT_MODEL || 'WHISPER_SMALL_Q8_0',
   sttLanguage: env.STT_LANG || 'auto',
   sttThreads: Number(env.STT_THREADS || 8),
+  sttGpu: env.STT_GPU === '1',
   ttsModel: env.TTS_MODEL || 'TTS_MULTILINGUAL_SUPERTONIC3_Q8_0',
   voiceLangs: (env.VOICE_LANGS || 'it,fr').split(',').map((s) => s.trim()),
   // Supertonic voice and speed per language, e.g. VOICE_IT=M1:1.2

@@ -69,7 +69,7 @@ pip install -r requirements.txt
 python jarvis_satellite.py --server https://<server>.<tailnet>.ts.net:8443
 ```
 
-Voice settings: `STT_MODEL` (registry constant or a local Whisper file, default `WHISPER_SMALL_Q8_0`), `STT_LANG` (`auto`), `VOICE_LANGS` (`it,fr`), `VOICE_IT` / `VOICE_FR` / `VOICE_EN` (Supertonic voice and speed, e.g. `M1:1.2`), `VOICE=0` to turn voice off.
+Voice settings: `STT_MODEL` (registry constant or a local Whisper file, default `WHISPER_SMALL_Q8_0`), `STT_LANG` (`auto`), `STT_GPU` (`1` runs Whisper on the graphics card), `STT_THREADS` (`8`), `VOICE_LANGS` (`it,fr`), `VOICE_IT` / `VOICE_FR` / `VOICE_EN` (Supertonic voice and speed, e.g. `M1:1.2`), `VOICE=0` to turn voice off.
 
 ## Run it
 

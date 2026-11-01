@@ -9,6 +9,15 @@ export const VOICE_SYSTEM =
   'Always reply in the language of the question (Italian, French or English). ' +
   'Use at most three short sentences, plain text only: no markdown, no lists, no emoji.'
 
+// The model has no clock: give it the local date and time with every request
+function now() {
+  const tz = process.env.TZ_NAME || 'Europe/Zurich'
+  const d = new Date()
+  const date = d.toLocaleDateString('en-GB', { timeZone: tz, weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+  const time = d.toLocaleTimeString('en-GB', { timeZone: tz, hour: '2-digit', minute: '2-digit' })
+  return `Current local date and time (${tz}): ${date}, ${time}. Use it for any question about the date or time; never guess them.`
+}
+
 export async function streamChat({ messages, onToken, system = SYSTEM }) {
   if (config.mock) return mockStream(messages, onToken)
 
@@ -22,7 +31,7 @@ export async function streamChat({ messages, onToken, system = SYSTEM }) {
     body: JSON.stringify({
       model: config.llmModel,
       stream: true,
-      messages: [{ role: 'system', content: system }, ...withNoThink(messages)],
+      messages: [{ role: 'system', content: `${system}\n${now()}` }, ...withNoThink(messages)],
     }),
   })
   if (!res.ok) throw new Error(`LLM server returned ${res.status}: ${(await res.text()).slice(0, 200)}`)

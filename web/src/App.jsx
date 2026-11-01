@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { fetchState, streamEvents } from './api.js'
+import { fetchState, streamEvents, postVoice } from './api.js'
+import { recordUtterance, unlockAudio, playBase64Wav } from './recorder.js'
 import Turn from './Turn.jsx'
 import HomePanel from './HomePanel.jsx'
 
@@ -19,6 +20,9 @@ export default function App() {
   const [state, setState] = useState(null)
   const [error, setError] = useState(null)
   const listEnd = useRef(null)
+  const [mic, setMic] = useState('idle') // idle | listening | thinking | speaking
+  const [level, setLevel] = useState(0)
+  const recording = useRef(null)
 
   useEffect(() => {
     fetchState().then(setState).catch((e) => setError(e.message))
@@ -87,6 +91,50 @@ export default function App() {
     }
   }
 
+  // Voice: tap the microphone, speak, and the recording stops by itself after a pause
+  async function talk(followUp = false) {
+    if (mic === 'listening') return recording.current?.stop()
+    if (mic !== 'idle' || busy) return
+    if (!followUp) unlockAudio()
+    const id = nextId++
+    try {
+      setMic('listening')
+      recording.current = await recordUtterance({ onLevel: setLevel })
+      const wav = await recording.current.done
+      setLevel(0)
+      if (!wav) return setMic('idle')
+      setMic('thinking')
+      setTurns((all) => [
+        ...all,
+        { id, voice: true, question: '…', startedAt: performance.now(), routes: [], answer: '', sources: null, decision: null, action: null, permission: null, stats: {}, done: false },
+      ])
+      const out = await postVoice(wav)
+      const t = out.timings || {}
+      update(id, (turn) => ({
+        ...turn,
+        question: out.transcript || '(nothing understood)',
+        decision: out.decision,
+        routes: [{ route: out.route || 'voice', reason: `Voice · ${out.lang} · heard in ${t.sttMs} ms, answered in ${t.routerMs} ms, spoken in ${t.ttsMs} ms` }],
+        answer: out.reply,
+        sources: out.sources?.length ? out.sources.map((title) => ({ title })) : null,
+        error: out.error,
+        done: true,
+        stats: { totalMs: t.totalMs },
+      }))
+      fetchState().then(setState).catch(() => {})
+      setMic('speaking')
+      await playBase64Wav(out.audio)
+      setMic('idle')
+      // "Shall I search the web?" waits for a spoken yes or no: listen again straight away
+      if (out.waitingForYesNo) setTimeout(() => talk(true), 300)
+    } catch (e) {
+      setMic('idle')
+      setLevel(0)
+      update(id, (turn) => ({ ...turn, error: e.message, done: true }))
+      if (!turns.some((x) => x.id === id)) setError(`Microphone: ${e.message}`)
+    }
+  }
+
   const settings = state?.settings
 
   return (
@@ -149,7 +197,20 @@ export default function App() {
             ask(input)
           }}
         >
-          <input value={input} onChange={(e) => setInput(e.target.value)} placeholder="Ask the house…" maxLength={500} aria-label="Your request" />
+          <button
+            type="button"
+            className={`mic ${mic}`}
+            onClick={() => talk()}
+            disabled={busy || mic === 'thinking' || mic === 'speaking'}
+            aria-label={mic === 'listening' ? 'Stop listening' : 'Speak'}
+            title={mic === 'listening' ? 'Listening… tap to stop' : 'Tap and speak (Italian, French or English)'}
+            style={{ '--level': level }}
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-2.08A7 7 0 0 0 19 12z" fill="currentColor" />
+            </svg>
+          </button>
+          <input value={input} onChange={(e) => setInput(e.target.value)} placeholder={mic === 'listening' ? 'Listening…' : mic === 'thinking' ? 'Thinking…' : mic === 'speaking' ? 'Speaking…' : 'Ask the house…'} maxLength={500} aria-label="Your request" />
           <button type="submit" disabled={busy || !input.trim()}>
             {busy ? '…' : 'Send'}
           </button>

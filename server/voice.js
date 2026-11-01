@@ -27,9 +27,13 @@ export async function initVoice(log = console.log) {
   sttId = await sdk.loadModel({
     modelSrc: sttSrc,
     ...(sdk[config.sttModel] ? {} : { modelType: 'whispercpp-transcription' }),
-    modelConfig: { language: config.sttLanguage, strategy: 'greedy', n_threads: config.sttThreads, temperature: 0, translate: false, no_timestamps: true },
+    modelConfig: {
+      language: config.sttLanguage, strategy: 'greedy', n_threads: config.sttThreads, temperature: 0, translate: false, no_timestamps: true,
+      // STT_GPU=1 runs Whisper on the graphics card, leaving the CPU to the LLM
+      contextParams: { use_gpu: config.sttGpu, flash_attn: config.sttGpu, gpu_device: 0 },
+    },
   })
-  log(`Voice: speech recognition ${path.basename(String(config.sttModel))} loaded in ${((performance.now() - t) / 1000).toFixed(1)} s`)
+  log(`Voice: speech recognition ${path.basename(String(config.sttModel))} on ${config.sttGpu ? 'GPU' : 'CPU'} loaded in ${((performance.now() - t) / 1000).toFixed(1)} s`)
   for (const lang of config.voiceLangs) {
     t = performance.now()
     const v = config.voices[lang] || { voice: 'F1', speed: 1.15 }
