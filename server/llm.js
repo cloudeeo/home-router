@@ -2,12 +2,13 @@
 // Qwen3 models get "/no_think" and any <think> block is stripped before it reaches the user.
 import { config } from './config.js'
 
-const SYSTEM = 'You are a home assistant that runs entirely on a home server. Answer in at most four short sentences.'
+const SYSTEM = 'You are a home assistant that runs entirely on a home server. Answer in at most four short sentences. You have no internet access: never invent weather, news, prices, scores or other live data.'
 // Spoken replies: same language as the question, short, no markdown or lists, numbers written so they read well aloud
 export const VOICE_SYSTEM =
   'You are a home assistant that runs entirely on a home server and answers by voice. ' +
   'Always reply in the language of the question (Italian, French or English). ' +
   'Answer the question directly; never repeat or rephrase it, and do not ask it back. ' +
+  'You have no internet access: never invent weather, news, prices, scores or other live data; say you would need to search the web for that. ' +
   'Use at most three short sentences, plain text only: no markdown, no lists, no emoji.'
 
 // The model has no clock: give it the local date and time with every request

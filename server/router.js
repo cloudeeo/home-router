@@ -12,6 +12,7 @@ import { webSearch } from './search.js'
 import { streamChat, VOICE_SYSTEM } from './llm.js'
 import { config } from './config.js'
 import { clockAnswer } from './clock.js'
+import { needsLiveInfo } from './live.js'
 
 const pending = new Map() // search id -> { query, created }
 
@@ -25,6 +26,10 @@ export async function handleRequest(text, emit, opts = {}) {
     emit('token', { text: clock })
     emit('done', { totalMs: Math.round(performance.now() - t0) })
     return
+  }
+  // Weather, news, prices, scores: only the web knows, so ask before searching instead of letting the LLM guess
+  if (needsLiveInfo(text)) {
+    return askSearchPermission(text, emit, t0, 'Needs live information (weather, news, prices): asking before searching the web', opts)
   }
   const decision = await classify(text)
   emit('decision', decision)
