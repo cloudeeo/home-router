@@ -3,6 +3,7 @@
 //   POST /api/ask      {text}  streams events: decision, route, action, home, permission, sources, token, done, error
 //   POST /api/search   {id, allow}  answers a pending permission request, streams the same events
 //   POST /api/voice    16 kHz mono WAV body  ->  JSON with transcript, reply text and reply audio (base64 WAV)
+//   POST /api/voice/stream  same body  ->  NDJSON: transcript, then one audio line per sentence, then done
 import http from 'node:http'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -110,6 +111,31 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && req.url === '/api/search') {
       const { id, allow } = await readBody(req)
       return stream(res, (emit) => handleSearchDecision(id, Boolean(allow), emit))
+    }
+    // Same as /api/voice, streamed as NDJSON: {"type":"transcript"}, then {"type":"audio","seq","text","audio"} per
+    // sentence while the LLM is still writing, then {"type":"done", ...the /api/voice fields without audio}
+    if (req.method === 'POST' && req.url.split('?')[0] === '/api/voice/stream') {
+      if (!config.voice) return json(res, 404, { error: 'Voice is turned off (VOICE=0)' })
+      const wav = await readRaw(req)
+      if (wav.length < 44 || wav.toString('ascii', 0, 4) !== 'RIFF') return json(res, 400, { error: 'Send a 16 kHz mono WAV file as the request body' })
+      const mockText = config.mock && req.headers['x-mock-transcript'] ? decodeURIComponent(req.headers['x-mock-transcript']) : undefined
+      const lang = new URL(req.url, 'http://x').searchParams.get('lang') || undefined
+      res.writeHead(200, { 'Content-Type': 'application/x-ndjson', 'Cache-Control': 'no-cache' })
+      const line = (obj) => res.write(JSON.stringify(obj) + '\n')
+      try {
+        const out = await handleVoice(wav, {
+          mockText,
+          lang,
+          onTranscript: (t) => line({ type: 'transcript', ...t }),
+          onAudio: ({ seq, text, audio }) => line({ type: 'audio', seq, text, audio: audio.toString('base64') }),
+        })
+        line({ type: 'done', ...out })
+        console.log(`voice/stream [${out.lang}] "${out.transcript}" -> ${out.route ?? '-'} | stt ${out.timings.sttMs} ms, first audio ${out.timings.firstAudioMs} ms, total ${out.timings.totalMs} ms`)
+      } catch (err) {
+        console.error(err)
+        line({ type: 'error', message: err.message })
+      }
+      return res.end()
     }
     if (req.method === 'POST' && req.url.split('?')[0] === '/api/voice') {
       if (!config.voice) return json(res, 404, { error: 'Voice is turned off (VOICE=0)' })

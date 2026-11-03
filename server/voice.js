@@ -1,6 +1,8 @@
 // Voice in and out for the router: Whisper turns the recorded question into text, the router answers,
 // and Supertonic reads the answer aloud in the language of the question (Italian, French or English).
 //   POST /api/voice?lang=it  (body: 16 kHz mono WAV)  ->  { transcript, lang, route, reply, audio: base64 WAV, timings }
+//   POST /api/voice/stream?lang=it  -> the same, as NDJSON lines: the spoken reply arrives sentence by sentence
+//   while the LLM is still writing, then a final "done" line (see index.js).
 // Each device says which language it speaks (?lang=it|fr|en, default: the first of VOICE_LANGS): Whisper's own
 // language detection is unreliable on short phrases such as "che ore sono". STT_LANG=auto brings detection back.
 // A web search still needs the user's OK: the assistant asks out loud, and the next request answers it
@@ -182,7 +184,68 @@ async function speak(text, lang) {
 
 // ---- the request ------------------------------------------------------------
 
+// ---- speaking while the LLM writes ---------------------------------------------
+
+// A sentence ends with . ! ? or … followed by a space or a line break. Very short pieces ("Sì.") wait for the
+// next sentence, so the voice does not stutter; a decimal like 3.5 is not an end because no space follows the dot.
+const SENTENCE_END = /[.!?…]+["»”)]?(?=\s)|\n/g
+const MIN_CHUNK = 25
+
+// Speaks text as it streams in: each complete sentence goes to Supertonic right away, one at a time in order,
+// and onAudio({ seq, text, audio }) receives each WAV as soon as it is ready.
+function streamingSpeaker(lang, onAudio, t0, timings) {
+  let buffer = ''
+  let seq = 0
+  let queue = Promise.resolve()
+  let spoken = ''
+  const say = (text) => {
+    const clean = speakable(text)
+    if (!clean) return
+    spoken += (spoken ? ' ' : '') + clean
+    const n = seq++
+    queue = queue.then(async () => {
+      try {
+        const t = performance.now()
+        const audio = await speak(clean, lang)
+        timings.ttsMs = (timings.ttsMs || 0) + Math.round(performance.now() - t)
+        if (timings.firstAudioMs === undefined) timings.firstAudioMs = Math.round(performance.now() - t0)
+        onAudio({ seq: n, text: clean, audio })
+      } catch (err) {
+        console.error(`voice: could not speak "${clean.slice(0, 40)}": ${err.message}`)
+      }
+    })
+  }
+  return {
+    push(token) {
+      buffer += token
+      for (;;) {
+        let cut = -1
+        for (const m of buffer.matchAll(SENTENCE_END)) {
+          const end = m.index + m[0].length
+          if (end >= MIN_CHUNK) {
+            cut = end
+            break
+          }
+        }
+        if (cut < 0) break
+        say(buffer.slice(0, cut))
+        buffer = buffer.slice(cut)
+      }
+    },
+    // Speak whatever is left, or the whole reply if nothing streamed (commands, permission questions, errors)
+    async finish(reply) {
+      if (seq === 0) say(reply)
+      else if (buffer.trim()) say(buffer)
+      buffer = ''
+      await queue
+      return spoken
+    },
+  }
+}
+
 // opts.lang: the language this device speaks; opts.mockText (MOCK mode only): the transcript to pretend Whisper heard
+// opts.onAudio (streaming): called with { seq, text, audio } for each spoken sentence, as soon as it is ready;
+// opts.onTranscript (streaming): called with { transcript, lang, sttMs } before the router runs.
 export async function handleVoice(wav, opts = {}) {
   const t0 = performance.now()
   const timings = {}
@@ -193,11 +256,16 @@ export async function handleVoice(wav, opts = {}) {
   const transcript = await transcribeWav(wav, auto ? 'auto' : asked, opts.mockText)
   timings.sttMs = Math.round(performance.now() - t)
   const lang = auto && transcript ? detectLang(transcript) : asked
+  opts.onTranscript?.({ transcript, lang, sttMs: timings.sttMs })
+  const speaker = opts.onAudio ? streamingSpeaker(lang, opts.onAudio, t0, timings) : null
 
   // Collect what the router emits
   const events = { reply: '', route: null, decision: null, action: null, permission: null, sources: [], error: null }
   const emit = (event, data) => {
-    if (event === 'token') events.reply += data.text
+    if (event === 'token') {
+      events.reply += data.text
+      speaker?.push(data.text)
+    }
     else if (event === 'route') events.route = events.route || data.route
     else if (event === 'decision') events.decision = data
     else if (event === 'action') events.action = data
@@ -240,9 +308,14 @@ export async function handleVoice(wav, opts = {}) {
   }
   timings.routerMs = Math.round(performance.now() - t)
 
-  t = performance.now()
-  const audio = await speak(reply, lang)
-  timings.ttsMs = Math.round(performance.now() - t)
+  let audio = null
+  if (speaker) {
+    reply = await speaker.finish(reply)
+  } else {
+    t = performance.now()
+    audio = await speak(reply, lang)
+    timings.ttsMs = Math.round(performance.now() - t)
+  }
   timings.totalMs = Math.round(performance.now() - t0)
 
   return {
@@ -255,6 +328,6 @@ export async function handleVoice(wav, opts = {}) {
     sources: events.sources.map((s) => s.title),
     error: events.error,
     timings,
-    audio: audio.toString('base64'),
+    ...(audio ? { audio: audio.toString('base64') } : {}),
   }
 }

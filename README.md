@@ -59,6 +59,8 @@ home-router (Node, this repo)  ── on the home server ───────�
 2. The router above decides what to do, exactly as for typed requests.
 3. **Supertonic 3** (QVAC SDK) reads the answer aloud in the language of the question. Italian and French are loaded by default (`VOICE_LANGS=it,fr`).
 
+`POST /api/voice/stream` does the same but speaks while the LLM is still writing: each sentence goes to Supertonic as soon as it is complete, and the reply arrives as NDJSON lines (transcript, one WAV per sentence, then `done` with the timings). The satellite uses it by default (`--no-stream` waits for the whole reply).
+
 Home commands get a short spoken confirmation without any LLM call. Time and date questions ("che ore sono a New York?", "quel jour sommes-nous ?") are answered from the server clock (`server/clock.js`, home zone `TZ_NAME`, default `Europe/Zurich`): a 4B model took about 2.5 s for them and got time zones wrong. Weather, news, prices and scores (`server/live.js`) go straight to the web-search permission step: without it, the local LLM answered "che tempo fa domani a Ginevra?" with an invented forecast. A web search is still never done silently: the assistant asks out loud, and the next phrase ("sì", "oui", "yes" or "no") answers.
 
 `satellite/jarvis_satellite.py` turns any computer with a microphone and speakers into a room device. It listens for the wake word **"Hey Jarvis"** locally with [openWakeWord](https://github.com/dscripka/openWakeWord), records until you stop talking, sends that recording only, and plays the reply:
