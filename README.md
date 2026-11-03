@@ -1,6 +1,6 @@
 # Home Router
 
-A home assistant that decides before it writes. Every request first goes through **Laya**, a small decision model from Tether's [QVAC SDK](https://github.com/tetherto/qvac) 0.22, which picks a route in about a quarter of a second on a desktop CPU:
+A home assistant that decides before it writes. Every request first goes through **Laya**, a small decision model from Tether's [QVAC SDK](https://github.com/tetherto/qvac) 0.23, which picks a route in about a quarter of a second on a desktop CPU:
 
 | Route | What happens | LLM call |
 | --- | --- | --- |
@@ -76,7 +76,7 @@ Voice settings: `STT_MODEL` (registry constant or a local Whisper file, default 
 Requirements: Node `^22.21.0 || >=24.9.0`, a running `qvac serve --openai` with a Qwen3 4B model (named `qwen4b` here), about 1–1.5 GB of free RAM for Laya and the embedding model.
 
 ```bash
-npm install                 # installs @qvac/sdk 0.22
+npm install                 # installs @qvac/sdk 0.23
 npm run eval                # first run downloads Laya and EmbeddingGemma from the QVAC registry
 npm start                   # http://127.0.0.1:8090
 ```
