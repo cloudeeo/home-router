@@ -104,3 +104,16 @@ async function mockStream(messages, onToken) {
   }
   return { ttftMs, tokens: words.length, totalMs: Math.round(performance.now() - t0) }
 }
+
+// The first request through a fresh connection and prompt path is slow (seen: ~8 s instead of ~1 s),
+// so send one tiny request at startup. Failures are only logged: the LLM may still be starting.
+export async function warmUpLlm(log = console.log) {
+  if (config.mock) return
+  const t = performance.now()
+  try {
+    await streamChat({ messages: [{ role: 'user', content: 'Ok' }], system: VOICE_SYSTEM, onToken: () => {} })
+    log(`LLM: warm-up done in ${((performance.now() - t) / 1000).toFixed(1)} s`)
+  } catch (err) {
+    log(`LLM: warm-up failed (${err.message}); the first question will be slower`)
+  }
+}

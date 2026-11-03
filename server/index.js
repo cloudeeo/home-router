@@ -11,7 +11,10 @@ import { initModels, closeModels } from './qvac.js'
 import { indexDocs, docList } from './docs.js'
 import { handleRequest, handleSearchDecision } from './router.js'
 import { home } from './home.js'
-import { initVoice, closeVoice, handleVoice } from './voice.js'
+import { initVoice, closeVoice, handleVoice, warmUpVoice } from './voice.js'
+import { warmUpLlm } from './llm.js'
+import { classify } from './intents.js'
+import { searchDocs } from './docs.js'
 
 const WEB_DIR = new URL('../web/dist/', import.meta.url).pathname
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.json': 'application/json' }
@@ -130,6 +133,15 @@ const server = http.createServer(async (req, res) => {
 await initModels()
 await indexDocs()
 await initVoice()
+// Warm up every model once, so the first real question is as fast as the next ones
+{
+  const t = performance.now()
+  await classify('Accendi la luce in cucina').catch(() => {})
+  await searchDocs('assicurazione auto').catch(() => {})
+  console.log(`Router: warm-up done in ${((performance.now() - t) / 1000).toFixed(1)} s`)
+}
+await warmUpVoice()
+await warmUpLlm()
 server.listen(config.port, config.host, () => {
   console.log(`home-router listening on http://${config.host}:${config.port} | router ${config.routerModel} | threshold ${config.threshold} | LLM ${config.llmModel} at ${config.llmUrl} | search ${config.search}${config.mock ? ' | MOCK' : ''}`)
 })

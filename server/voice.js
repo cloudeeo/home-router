@@ -52,6 +52,17 @@ export async function initVoice(log = console.log) {
   }
 }
 
+// The first transcription and the first synthesis on a fresh model are much slower (GPU kernels, buffers),
+// so run both once per language at startup instead of making the first real question wait for it.
+export async function warmUpVoice(log = console.log) {
+  if (!config.voice || config.mock) return
+  const t = performance.now()
+  const silence = wavFromInt16(new Int16Array(16000), 16000) // 1 s
+  for (const lang of Object.keys(sttIds)) await transcribeWav(silence, lang).catch(() => {})
+  for (const lang of Object.keys(ttsIds)) await speak({ it: 'Pronto.', fr: 'Prêt.', en: 'Ready.' }[lang] || 'Ok.', lang).catch(() => {})
+  log(`Voice: warm-up done in ${((performance.now() - t) / 1000).toFixed(1)} s`)
+}
+
 export async function closeVoice() {
   if (!sdk) return
   for (const id of [...Object.values(sttIds), ...Object.values(ttsIds)]) if (id) await sdk.unloadModel({ modelId: id })
