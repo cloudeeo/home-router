@@ -1,5 +1,7 @@
 # Home Router
 
+[![Built with QVAC](https://raw.githubusercontent.com/tetherto/qvac/refs/heads/main/docs/branding/qvac-badge-green-light.svg)](https://github.com/tetherto/qvac)
+
 A home assistant that decides before it writes. Every request first goes through **Laya**, a small decision model from Tether's [QVAC SDK](https://github.com/tetherto/qvac) 0.23, which picks a route in about a quarter of a second on a desktop CPU:
 
 | Route | What happens | LLM call |
