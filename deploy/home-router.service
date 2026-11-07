@@ -1,0 +1,24 @@
+# systemd user unit for home-router. Install: see "Run as a service" in README.md.
+# %h is the home directory of the user running the unit.
+[Unit]
+Description=home-router (Jarvis voice assistant on QVAC)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/home-router
+Environment=STT_GPU=1
+Environment=STT_MODEL=%h/models/ggml-small-q8_0.bin
+Environment=SEARCH=searxng
+# Local copies used by the SDK when the QVAC registry times out
+Environment=EMBED_FALLBACK_SRC=%h/models/embeddinggemma-300M-Q8_0.gguf
+Environment=ROUTER_FALLBACK_SRC=%h/models/laya-typed-decisions-Q8_0.gguf
+# nvm installs node under a versioned directory: adjust v22.23.3 here and in ExecStart after a node upgrade
+Environment=PATH=%h/.nvm/versions/node/v22.23.3/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=%h/.nvm/versions/node/v22.23.3/bin/node server/index.js
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target

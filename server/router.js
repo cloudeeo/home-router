@@ -85,8 +85,13 @@ function askSearchPermission(text, emit, t0, reason, opts = {}) {
 }
 
 async function answerFromDocs(text, emit, t0, reason, unsure, found, opts = {}) {
-  emit('route', { route: 'document', reason })
   const hits = found || (await searchDocs(text))
+  if (!hits.length) {
+    // Degraded mode: document search is off, so the local LLM answers without excerpts
+    emit('route', { route: 'llm', reason: 'Document search is unavailable: answered by the local LLM' })
+    return answerWithLlm(text, emit, t0, opts)
+  }
+  emit('route', { route: 'document', reason })
   emit('sources', hits.map((h) => ({ title: h.title, doc: h.doc, url: `/api/docs/${encodeURIComponent(h.doc)}`, score: Number(h.score.toFixed(3)), snippet: h.text.replace(/^#+\s.*$/gm, '').trim().slice(0, 220) })))
   const context = hits.map((h) => `Document: ${h.title}\n${h.text}`).join('\n\n')
   const cite = 'Name the document by its title, for example "according to your Car insurance policy"; never cite by number.'
@@ -127,11 +132,19 @@ export async function handleSearchDecision(id, allow, emit) {
 }
 
 async function answerWithLlm(prompt, emit, t0, opts = {}) {
-  const stats = await streamChat({
-    messages: [{ role: 'user', content: prompt }],
-    ...(opts.voice ? { system: VOICE_SYSTEM } : {}),
-    onToken: (text) => emit('token', { text }),
-  })
+  let stats
+  try {
+    stats = await streamChat({
+      messages: [{ role: 'user', content: prompt }],
+      ...(opts.voice ? { system: VOICE_SYSTEM } : {}),
+      onToken: (text) => emit('token', { text }),
+    })
+  } catch (err) {
+    // Tag the error so callers can tell an LLM failure from other failures
+    console.error(`[router] LLM failed: ${err.message}`)
+    err.llm = true
+    throw err
+  }
   emit('done', { totalMs: Math.round(performance.now() - t0), llm: stats })
 }
 

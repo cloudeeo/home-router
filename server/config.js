@@ -24,6 +24,8 @@ export const config = {
   // Router model and thresholds (see laya-bench results: typed decisions 421M with detailed criteria)
   routerModel: env.ROUTER_MODEL || 'LAYA_TYPED_DECISIONS_421M_Q8_0',
   routerDevice: env.ROUTER_DEVICE || 'cpu',
+  // Optional HTTP URL or local file used by the SDK when the QVAC registry is unreachable (checked against the model checksum)
+  routerFallbackSrc: env.ROUTER_FALLBACK_SRC || null,
   threshold: Number(env.THRESHOLD || 0.45), // below this, the request goes to the LLM and nothing is acted on
   // ONE_CALL=1 asks intent and device in one decide() call. Measured on omen01: ~373 ms for a command either way,
   // so the default asks the device only for commands, and other requests skip that question.
@@ -32,6 +34,7 @@ export const config = {
   // Embedding model for the document search
   embedModel: env.EMBED_MODEL || 'EMBEDDINGGEMMA_300M_Q8_0',
   embedDevice: env.EMBED_DEVICE || 'cpu',
+  embedFallbackSrc: env.EMBED_FALLBACK_SRC || null, // same as routerFallbackSrc, for the embedding model
   docsDir: env.DOCS_DIR || new URL('../docs/', import.meta.url).pathname,
   // When Laya is unsure, a document passage at least this similar to the question (cosine) is used to answer.
   // The [router] log line prints the best match for each unsure request, to calibrate it.

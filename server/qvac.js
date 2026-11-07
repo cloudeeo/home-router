@@ -18,16 +18,48 @@ export async function initModels(log = console.log) {
   if (!embedSrc) throw new Error(`Unknown embedding model ${config.embedModel}`)
 
   let t = performance.now()
-  decisionId = await sdk.loadModel({
+  decisionId = await loadWithRetry(`Router model ${config.routerModel}`, {
     modelSrc: routerSrc,
     modelType: 'llamacpp-decision',
     modelConfig: { device: config.routerDevice },
-  })
+    ...(config.routerFallbackSrc && { fallbackSrc: config.routerFallbackSrc }),
+  }, log)
   log(`Router model ${config.routerModel} loaded in ${((performance.now() - t) / 1000).toFixed(1)} s`)
 
+  // The embedding model only serves document search: if it cannot be loaded, start without it (degraded mode)
   t = performance.now()
-  embedId = await sdk.loadModel({ modelSrc: embedSrc, modelConfig: { device: config.embedDevice } })
-  log(`Embedding model ${config.embedModel} loaded in ${((performance.now() - t) / 1000).toFixed(1)} s`)
+  try {
+    embedId = await loadWithRetry(`Embedding model ${config.embedModel}`, {
+      modelSrc: embedSrc,
+      modelConfig: { device: config.embedDevice },
+      ...(config.embedFallbackSrc && { fallbackSrc: config.embedFallbackSrc }),
+    }, log)
+    log(`Embedding model ${config.embedModel} loaded in ${((performance.now() - t) / 1000).toFixed(1)} s`)
+  } catch (err) {
+    embedId = null
+    log(`Embedding model unavailable: document search disabled (${[err?.code, err?.message].filter(Boolean).join(': ') || err})`)
+  }
+}
+
+// False when the embedding model failed to load: document search is then skipped
+export const embedAvailable = () => config.mock || embedId !== null
+
+// Registry downloads can time out (REQUEST_TIMEOUT), so a load is tried up to 3 times: after 5 s, then after 15 s.
+// The last error is rethrown.
+const RETRY_DELAYS_MS = [5000, 15000]
+
+async function loadWithRetry(label, opts, log = console.log) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await sdk.loadModel(opts)
+    } catch (err) {
+      const delay = RETRY_DELAYS_MS[attempt - 1]
+      const reason = [err?.code, err?.message].filter(Boolean).join(': ') || String(err)
+      log(`${label}: load attempt ${attempt} failed (${reason})${delay ? `, retrying in ${delay / 1000} s` : ''}`)
+      if (!delay) throw err
+      await new Promise((resolve) => setTimeout(resolve, delay))
+    }
+  }
 }
 
 export async function closeModels() {
@@ -86,6 +118,7 @@ export const asDocument = (title, text) => `title: ${title} | text: ${text}`
 
 export async function embed(texts) {
   if (config.mock) return texts.map(mockVector)
+  if (!embedId) return []
   const { embedding } = await sdk.embed({ modelId: embedId, text: texts })
   return embedding
 }

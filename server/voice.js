@@ -133,6 +133,7 @@ const PHRASES = {
   denied: { it: "D'accordo, resta tutto in casa.", fr: "D'accord, tout reste à la maison.", en: 'OK, nothing leaves the house.' },
   notUnderstood: { it: 'Scusa, non ho capito.', fr: "Pardon, je n'ai pas compris.", en: "Sorry, I didn't catch that." },
   error: { it: 'Scusa, qualcosa non ha funzionato.', fr: "Pardon, quelque chose n'a pas marché.", en: 'Sorry, something went wrong.' },
+  llmDown: { it: 'Scusa, il modello linguistico non risponde in questo momento.', fr: 'Désolé, le modèle de langage ne répond pas pour le moment.', en: 'Sorry, the language model is not answering right now.' },
 }
 const YES = /^\s*(s[iì]|certo|va bene|ok|okay|oui|d'accord|vas-y|yes|sure|go ahead)(?=[\s,.!?]|$)/i
 const NO = /^\s*(no|non|lascia stare|pas besoin|nope)(?=[\s,.!?]|$)/i
@@ -284,18 +285,26 @@ export async function handleVoice(wav, opts = {}) {
     const { id, lang: askedIn } = pendingSearch
     pendingSearch = null
     if (allow) {
-      await handleSearchDecision(id, true, emit)
-      reply = events.reply || PHRASES.error[askedIn]
+      try {
+        await handleSearchDecision(id, true, emit)
+        reply = events.reply || PHRASES.error[askedIn]
+      } catch (err) {
+        console.error(`voice: search answer failed: ${err.message}`)
+        reply = (err.llm ? PHRASES.llmDown : PHRASES.error)[askedIn]
+      }
     } else {
       await handleSearchDecision(id, false, () => {})
       reply = PHRASES.denied[askedIn]
     }
   } else {
     pendingSearch = null
+    let failed = null
     try {
       await handleRequest(transcript, emit, { voice: true })
     } catch (err) {
+      console.error(`voice: request failed: ${err.message}`)
       events.error = err.message
+      failed = err
     }
     if (events.permission) {
       pendingSearch = { id: events.permission.id, lang, at: Date.now() }
@@ -303,7 +312,7 @@ export async function handleVoice(wav, opts = {}) {
     } else if (events.action) {
       reply = events.action.ok && events.action.facts ? actionPhrase(events.action.facts, lang) : PHRASES.notUnderstood[lang]
     } else {
-      reply = events.reply.trim() || PHRASES.error[lang]
+      reply = events.reply.trim() || (failed?.llm ? PHRASES.llmDown : PHRASES.error)[lang]
     }
   }
   timings.routerMs = Math.round(performance.now() - t)

@@ -1,7 +1,5 @@
 # Home Router
 
-[![Built with QVAC](https://raw.githubusercontent.com/tetherto/qvac/refs/heads/main/docs/branding/qvac-badge-green-light.svg)](https://github.com/tetherto/qvac)
-
 A home assistant that decides before it writes. Every request first goes through **Laya**, a small decision model from Tether's [QVAC SDK](https://github.com/tetherto/qvac) 0.23, which picks a route in about a quarter of a second on a desktop CPU:
 
 | Route | What happens | LLM call |
@@ -123,6 +121,7 @@ Rebuild the web app after changing it: `npm run web:build`.
 | `ONE_CALL` | `0` | `1` asks intent and device in one `decide()` call; measured at the same ~373 ms per command as two calls |
 | `ROUTER_MODEL` | `LAYA_TYPED_DECISIONS_421M_Q8_0` | Laya checkpoint |
 | `EMBED_MODEL` | `EMBEDDINGGEMMA_300M_Q8_0` | Embedding model for documents |
+| `ROUTER_FALLBACK_SRC` / `EMBED_FALLBACK_SRC` | none | Local file or HTTP URL the SDK loads from when the QVAC registry is unreachable (checked against the model checksum). Each model load is also retried up to 3 times |
 | `LLM_URL` | `http://127.0.0.1:11434/v1` | OpenAI-compatible endpoint |
 | `LLM_MODEL` | `qwen4b` | Model name on that endpoint |
 | `LLM_KEY` / `LLM_KEY_FILE` | `~/qvac-lab/api-key.txt` | API key for the endpoint |
@@ -131,6 +130,19 @@ Rebuild the web app after changing it: `npm run web:build`.
 | `DOCS_DIR` | `./docs` | Folder of Markdown documents |
 | `DOC_SCORE` | `0.5` | When Laya is unsure, a document passage at least this similar (cosine) is used to answer; the `[router]` log line prints the best match |
 | `PORT` / `HOST` | `8090` / `127.0.0.1` | Where the router listens |
+
+### Run as a service
+
+`deploy/home-router.service` is a systemd user unit with the settings above. Check the node path in it (nvm puts the
+version in the path), then:
+
+```bash
+cp deploy/home-router.service ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now home-router
+sudo loginctl enable-linger "$USER"   # keep user services running without a login session
+journalctl --user -u home-router -f   # follow the logs
+```
 
 ## Limits
 

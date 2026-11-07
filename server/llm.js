@@ -71,6 +71,8 @@ export async function streamChat({ messages, onToken, system = SYSTEM }) {
       }
     }
   }
+  // A stream that closes without a single token is a failure, not an empty answer
+  if (tokens === 0) throw new Error('LLM returned an empty reply')
   return { ttftMs, tokens, totalMs: Math.round(performance.now() - t0) }
 }
 

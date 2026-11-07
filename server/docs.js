@@ -2,7 +2,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { config } from './config.js'
-import { embed, asQuery, asDocument, cosine } from './qvac.js'
+import { embed, embedAvailable, asQuery, asDocument, cosine } from './qvac.js'
 
 let passages = [] // { doc, title, text, vector }
 
@@ -24,6 +24,10 @@ function split(text, max = 600) {
 }
 
 export async function indexDocs(log = console.log) {
+  if (!embedAvailable()) {
+    log('Documents not indexed: no embedding model')
+    return
+  }
   const files = fs.readdirSync(config.docsDir).filter((f) => f.endsWith('.md')).sort()
   const items = []
   for (const file of files) {
@@ -38,6 +42,7 @@ export async function indexDocs(log = console.log) {
 }
 
 export async function searchDocs(query, k = 3) {
+  if (!passages.length) return [] // nothing indexed (for example, no embedding model)
   const [q] = await embed([asQuery(query)])
   return passages
     .map((p) => ({ doc: p.doc, title: p.title, text: p.text, score: cosine(q, p.vector) }))
