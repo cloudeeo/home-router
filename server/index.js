@@ -14,6 +14,7 @@ import { handleRequest, handleSearchDecision } from './router.js'
 import { home } from './home.js'
 import { initVoice, closeVoice, handleVoice, warmUpVoice } from './voice.js'
 import { warmUpLlm } from './llm.js'
+import { warmUpSecond } from './second.js'
 import { classify } from './intents.js'
 import { searchDocs } from './docs.js'
 
@@ -98,7 +99,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && req.url === '/api/state') {
       return json(res, 200, {
         home,
-        settings: { mock: config.mock, routerModel: config.routerModel, threshold: config.threshold, llmModel: config.llmModel, search: config.search },
+        settings: { mock: config.mock, routerModel: config.routerModel, threshold: config.threshold, secondModel: config.secondRouter ? config.secondModel : null, llmModel: config.llmModel, search: config.search },
         documents: docList(),
       })
     }
@@ -168,8 +169,9 @@ await initVoice()
 }
 await warmUpVoice()
 await warmUpLlm()
+await warmUpSecond()
 server.listen(config.port, config.host, () => {
-  console.log(`home-router listening on http://${config.host}:${config.port} | router ${config.routerModel} | threshold ${config.threshold} | LLM ${config.llmModel} at ${config.llmUrl} | search ${config.search}${config.mock ? ' | MOCK' : ''}`)
+  console.log(`home-router listening on http://${config.host}:${config.port} | router ${config.routerModel} | threshold ${config.threshold} | second router ${config.secondRouter ? config.secondModel + (config.secondThink ? ' (thinking)' : '') : 'off'} | LLM ${config.llmModel} at ${config.llmUrl} | search ${config.search}${config.mock ? ' | MOCK' : ''}`)
 })
 
 for (const sig of ['SIGINT', 'SIGTERM']) {

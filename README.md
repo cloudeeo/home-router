@@ -8,7 +8,7 @@ A home assistant that decides before it writes. Every request first goes through
 | **document** | Searches the user's documents on the same server and answers with the source | local |
 | **search** | Asks the user before anything leaves the house, then searches once | local |
 | **chat** | Answered by the local LLM | local |
-| *unsure* | Below the confidence threshold, the fallback follows the cost of a mistake: a likely search still asks permission first, a likely document question searches the local files (nothing leaves the house), anything else goes to the local LLM and nothing is switched | local |
+| *unsure* | Below the confidence threshold, **BotPsy-0.8B** (Tether's tool-calling model, on the same qvac serve) picks the route instead, in about a second. A web search still asks permission first, and a close document passage still wins over search or chat. Without BotPsy, a likely search asks permission, a likely document question searches the local files, anything else goes to the local LLM and nothing is switched | local |
 
 Everything runs on one home server. The phone only opens a web page.
 
@@ -30,6 +30,21 @@ Measured on the router itself (`npm run eval`, i7-10700K, CPU only):
 | Average decision time | 243 ms |
 | A home command, question to state change | ~373 ms, no LLM call |
 
+## Two routers: Laya first, BotPsy when Laya is unsure
+
+Laya is fast and honest about its confidence, but it was tuned on English: on the same 40 requests in Italian it got 19/40 right and was sure of only 5. BotPsy-0.8B with thinking got 34/40 in Italian and 38/40 in English, at about 1 s per request on an RTX 3060 against Laya's 0.25 s on the CPU ([qvac-lab](https://github.com/cloudeeo/qvac-lab), `MEASUREMENTS.md` section 11). So Laya decides when it is sure, and BotPsy decides the rest.
+
+Only BotPsy's route and device are used. The operation is still read from the user's words (`server/home.js`), because BotPsy returned `on` for "Spegni le luci" in Italian, and a request that names the garage always targets the garage door (it once returned `door`, which would have unlocked the front door). Its usual mistake is sending a question about the user's own files, or a plain question, to web search; that only costs a permission prompt, and a close document passage is checked first.
+
+BotPsy needs an alias in the qvac serve config, for example:
+
+```json
+"botpsy": { "type": "llamacpp-completion", "src": "/path/to/botpsy-0.8b-q8_0.gguf", "preload": true,
+            "config": { "device": "gpu", "ctx_size": 8192, "tools": true } }
+```
+
+If the alias is missing, slow or failing, the router logs it and falls back to Laya's unsure path.
+
 ## Architecture
 
 ```
@@ -40,16 +55,18 @@ home-router (Node, this repo)  ── on the home server ───────�
   ├─ Laya typed decisions 421M      decide(): intent + confidence, then the device for commands
   ├─ EmbeddingGemma 300M            embeds the documents at startup and each question
   ├─ simulated home                 state shown in the app
-  └─ qvac serve (already running)   OpenAI-compatible API, Qwen3 4B, streams the answers
+  └─ qvac serve (already running)   OpenAI-compatible API: Qwen3 4B streams the answers,
+                                    BotPsy-0.8B routes the requests Laya is unsure about
 ```
 
 - `server/intents.js`: the questions Laya answers (intent, then device).
 - `server/router.js`: the routing rules and the permission step for web search.
+- `server/second.js`: the second router (BotPsy through qvac serve: one tool per route, no tool means chat).
 - `server/docs.js`: passage splitting, embeddings and cosine search over `docs/`.
 - `server/llm.js`: streaming client for the OpenAI-compatible endpoint, strips `<think>` blocks.
 - `server/home.js`: the simulated home; this is where a real setup would call Home Assistant.
 - `web/`: the React app (Vite). `web/dist/` is the built version served by the router.
-- `scripts/route-eval.js`: checks the router on the 40 labelled requests.
+- `scripts/route-eval.js`: checks the router on the 40 labelled requests (`scripts/cases-it.json` has them in Italian), Laya alone and with the second router.
 
 ## Voice: talk to it from any room
 
@@ -131,6 +148,10 @@ Rebuild the web app after changing it: `npm run web:build`.
 | `SEARCH` | `mock` | `mock` (labelled placeholder), `searxng` (self-hosted SearXNG) or `ddg` (DuckDuckGo Instant Answer API, facts only) |
 | `SEARXNG_URL` | `http://127.0.0.1:8888` | SearXNG instance used when `SEARCH=searxng` |
 | `DOCS_DIR` | `./docs` | Folder of Markdown documents |
+| `SECOND_ROUTER` | `1` (`0` in MOCK mode) | `0`: no second router; unsure requests go to the LLM and nothing is switched |
+| `SECOND_MODEL` | `botpsy` | qvac serve alias of the tool-calling model used when Laya is unsure |
+| `SECOND_THINK` | `1` | `0` turns BotPsy's thinking off: about 0.5 s instead of 1 s, but 25/40 instead of 34/40 in Italian |
+| `SECOND_TIMEOUT_MS` | `8000` | After this, Laya's unsure path is used |
 | `DOC_SCORE` | `0.5` | When Laya is unsure, a document passage at least this similar (cosine) is used to answer; the `[router]` log line prints the best match |
 | `PORT` / `HOST` | `8090` / `127.0.0.1` | Where the router listens |
 
@@ -149,7 +170,8 @@ journalctl --user -u home-router -f   # follow the logs
 
 ## Limits
 
-- The router was tuned on 40 hand-written English requests: an indication, not a guarantee.
+- The routers were measured on 40 hand-written requests, in English and Italian, one run each: an indication, not a guarantee. French is not measured.
+- With the second router, an unsure command is acted on (BotPsy got every command's device right in both languages, after the garage check); set `SECOND_ROUTER=0` to keep the old rule that nothing is switched below the threshold.
 - Thresholds depend on the Laya checkpoint: the multilingual 322M was often confidently wrong in the benchmark, so it needs a different strategy.
 - The home is simulated. Web search is a placeholder unless `SEARCH=searxng` or `SEARCH=ddg`; live data such as train delays depends on what the search engines return.
 - Single user, no authentication: publish it only inside a private network such as a tailnet.

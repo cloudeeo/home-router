@@ -4,12 +4,15 @@ function DecisionCard({ decision, routes }) {
   if (!decision) return routes.length ? <div className="decision">{routes.map((r, i) => <p key={i} className="reason">{r.reason}</p>)}</div> : <div className="decision pending">Deciding…</div>
   const route = routes[0]?.route
   const fallback = route === 'llm'
+  // Laya was unsure and the second router (BotPsy) picked the route
+  const second = decision.second
+  const intent = second ? second.intent : decision.intent
   return (
-    <div className={`decision ${fallback ? 'fallback' : decision.intent}`}>
+    <div className={`decision ${fallback ? 'fallback' : intent}`}>
       <div className="decision-head">
-        <span className={`tag ${fallback ? 'llm' : decision.intent}`}>{fallback ? 'unsure → LLM' : decision.intent}</span>
-        <span className="conf">{Math.round(decision.p * 100)}% sure</span>
-        <span className="ms">{decision.ms} ms</span>
+        <span className={`tag ${fallback ? 'llm' : intent}`}>{fallback ? 'unsure → LLM' : second ? `unsure → ${second.model}: ${intent}` : intent}</span>
+        <span className="conf">{second ? 'Laya ' : ''}{Math.round(decision.p * 100)}% sure</span>
+        <span className="ms">{decision.ms}{second ? ` + ${second.ms}` : ''} ms</span>
       </div>
       <div className="bars" aria-label="Probability per intent">
         {ORDER.map((k) => (
@@ -80,7 +83,7 @@ export default function Turn({ turn, onPermission }) {
         {turn.error && <p className="error">{turn.error}</p>}
         {turn.done && (
           <p className="stats">
-            {turn.decision && `decided in ${turn.decision.ms} ms`}
+            {turn.decision && `decided in ${turn.decision.ms + (turn.decision.second?.ms ?? 0)} ms`}
             {firstWord && ` · first word after ${firstWord} s`}
             {turn.stats?.totalMs != null && ` · done in ${(turn.stats.totalMs / 1000).toFixed(1)} s`}
           </p>

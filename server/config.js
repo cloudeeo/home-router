@@ -45,6 +45,15 @@ export const config = {
   llmKey: readKey(),
   llmModel: env.LLM_MODEL || 'qwen4b',
 
+  // Second router: when Laya is below the threshold, a tool-calling model on the same qvac serve picks the route
+  // (BotPsy-0.8B, alias "botpsy" in qvac.config.json). SECOND_ROUTER=0 turns it off: unsure requests then go
+  // to the LLM and nothing is switched, as before. If the alias is missing or slow, Laya's fallback is used.
+  // Off by default in MOCK mode; SECOND_ROUTER=1 with MOCK=1 tests it against any OpenAI-compatible LLM_URL.
+  secondRouter: env.SECOND_ROUTER ? env.SECOND_ROUTER !== '0' : env.MOCK !== '1',
+  secondModel: env.SECOND_MODEL || 'botpsy',
+  secondThink: env.SECOND_THINK !== '0',
+  secondTimeoutMs: Number(env.SECOND_TIMEOUT_MS || 8000),
+
   // Voice (POST /api/voice): VOICE=0 turns it off. STT_MODEL is a QVAC registry constant or a local Whisper file
   // (a local file skips the registry, which is useful when registry downloads time out).
   voice: env.VOICE !== '0',

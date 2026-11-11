@@ -3,7 +3,8 @@
 //   search   -> ask the user before anything leaves the house
 //   document -> search the local documents, answer with sources
 //   chat     -> answer with the local LLM
-// Below the confidence threshold the request goes to the local LLM, and nothing is switched or sent online.
+// Below the confidence threshold a second router (BotPsy, a tool-calling model) picks the route; without it,
+// the request goes to the local LLM, and nothing is switched or sent online.
 import crypto from 'node:crypto'
 import { classify, pickDevice } from './intents.js'
 import { applyCommand, home } from './home.js'
@@ -13,6 +14,7 @@ import { streamChat, VOICE_SYSTEM } from './llm.js'
 import { config } from './config.js'
 import { clockAnswer } from './clock.js'
 import { needsLiveInfo } from './live.js'
+import { secondOpinion } from './second.js'
 
 const pending = new Map() // search id -> { query, created }
 
@@ -36,6 +38,12 @@ export async function handleRequest(text, emit, opts = {}) {
 
   if (!decision.confident) {
     const pct = (decision.p * 100).toFixed(0)
+    const second = await secondOpinion(text)
+    if (second) {
+      decision.second = second
+      emit('decision', decision)
+      return routeSecond(text, emit, t0, decision, second, opts)
+    }
     // Below the threshold, the fallback depends on what acting wrongly would cost:
     // - search: the permission prompt already asks the user, so it doubles as the confirmation
     // - document: searching local files is harmless and nothing leaves the house, so search them anyway
@@ -58,13 +66,8 @@ export async function handleRequest(text, emit, opts = {}) {
   switch (decision.intent) {
     case 'action': {
       const device = decision.device || (await pickDevice(text))
-      const result = applyCommand(device.device, text)
       const how = decision.device ? 'same decision' : `${device.ms} ms`
-      emit('route', { route: 'action', reason: `Command for: ${device.device} (${(device.p * 100).toFixed(0)}%, ${how})` })
-      emit('action', { device: device.device, ok: result.ok, summary: result.summary, facts: result.facts })
-      emit('home', home)
-      emit('done', { totalMs: Math.round(performance.now() - t0) })
-      return
+      return runAction(text, emit, t0, device.device, `Command for: ${device.device} (${(device.p * 100).toFixed(0)}%, ${how})`)
     }
     case 'search':
       return askSearchPermission(text, emit, t0, 'Needs live information from the internet', opts)
@@ -74,6 +77,40 @@ export async function handleRequest(text, emit, opts = {}) {
       emit('route', { route: 'chat', reason: 'General question: answered by the local LLM' })
       return answerWithLlm(text, emit, t0, opts)
   }
+}
+
+// The device comes from the router; the operation (on/off, a level, a temperature) is read from the words by home.js
+function runAction(text, emit, t0, device, reason) {
+  const result = applyCommand(device, text)
+  emit('route', { route: 'action', reason })
+  emit('action', { device, ok: result.ok, summary: result.summary, facts: result.facts })
+  emit('home', home)
+  emit('done', { totalMs: Math.round(performance.now() - t0) })
+}
+
+// Laya was unsure and the second router answered. Its usual mistake (qvac-lab MEASUREMENTS.md, section 11) is sending
+// a question about the user's own files, or a plain question, to the web, so for search and chat a close document
+// passage still wins, as in Laya's unsure path. Search always asks before anything leaves the house.
+async function routeSecond(text, emit, t0, decision, second, opts) {
+  const who = `Laya unsure (${decision.intent} ${(decision.p * 100).toFixed(0)}%), ${second.model} decided in ${second.ms} ms`
+  console.log(`[router] ${who}: ${second.intent}${second.device ? ` (${second.device})` : ''}`)
+  if (second.intent === 'action') {
+    const device = second.device ? { device: second.device } : await pickDevice(text)
+    return runAction(text, emit, t0, device.device, `${who}: command for ${device.device}`)
+  }
+  if (second.intent === 'document') {
+    return answerFromDocs(text, emit, t0, `${who}: searching your documents on this server`, false, null, opts)
+  }
+  const hits = await searchDocs(text)
+  const best = hits[0]?.score ?? 0
+  if (best >= config.docScore) {
+    return answerFromDocs(text, emit, t0, `${who}: ${second.intent}, but a document matches (${best.toFixed(2)}): answering from your files on this server`, true, hits, opts)
+  }
+  if (second.intent === 'search') {
+    return askSearchPermission(text, emit, t0, `${who}: needs live information, asking before searching the web`, opts)
+  }
+  emit('route', { route: 'chat', reason: `${who}: general question, answered by the local LLM` })
+  return answerWithLlm(text, emit, t0, opts)
 }
 
 function askSearchPermission(text, emit, t0, reason, opts = {}) {
