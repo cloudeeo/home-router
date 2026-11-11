@@ -11,6 +11,7 @@ WorkingDirectory=%h/home-router
 Environment=STT_GPU=1
 Environment=STT_MODEL=%h/models/ggml-small-q8_0.bin
 Environment=SEARCH=searxng
+# Environment=AUDIO_URL=http://127.0.0.1:11434/v1   # use qvac serve's Whisper and Supertonic (see README)
 # Local copies used by the SDK when the QVAC registry times out
 Environment=EMBED_FALLBACK_SRC=%h/models/embeddinggemma-300M-Q8_0.gguf
 Environment=ROUTER_FALLBACK_SRC=%h/models/laya-typed-decisions-Q8_0.gguf

@@ -125,6 +125,9 @@ Rebuild the web app after changing it: `npm run web:build`.
 | `LLM_URL` | `http://127.0.0.1:11434/v1` | OpenAI-compatible endpoint |
 | `LLM_MODEL` | `qwen4b` | Model name on that endpoint |
 | `LLM_KEY` / `LLM_KEY_FILE` | `~/qvac-lab/api-key.txt` | API key for the endpoint |
+| `AUDIO_URL` | none | e.g. `http://127.0.0.1:11434/v1`: transcribe and speak through qvac serve's OpenAI-compatible audio endpoints (same key as the LLM) instead of loading Whisper and Supertonic in the router. The models are shared with qvac serve, which frees their VRAM (~1.4 GB), but both services then depend on qvac serve; `STT_MODEL`, `STT_GPU`, `TTS_MODEL` and `VOICE_IT`/`VOICE_FR`/`VOICE_EN` are then set in the qvac serve config instead |
+| `STT_ALIAS` | `whisper-{lang}` | With `AUDIO_URL`: qvac serve alias of the transcription model; `{lang}` is the device language |
+| `TTS_VOICE` | `{lang}` | With `AUDIO_URL`: `voice` sent to `/audio/speech`, mapped to a `tts-*` alias by `serve.openai.audio.speech.voices` |
 | `SEARCH` | `mock` | `mock` (labelled placeholder), `searxng` (self-hosted SearXNG) or `ddg` (DuckDuckGo Instant Answer API, facts only) |
 | `SEARXNG_URL` | `http://127.0.0.1:8888` | SearXNG instance used when `SEARCH=searxng` |
 | `DOCS_DIR` | `./docs` | Folder of Markdown documents |

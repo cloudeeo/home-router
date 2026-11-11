@@ -13,8 +13,14 @@ import path from 'node:path'
 import crypto from 'node:crypto'
 import { config } from './config.js'
 import { handleRequest, handleSearchDecision } from './router.js'
+import { authHeaders } from './llm.js'
 
 let sdk = null
+// AUDIO_URL set: Whisper and Supertonic run inside qvac serve, reached over its OpenAI-compatible audio endpoints
+const remote = () => Boolean(config.audioUrl)
+const fillLang = (template, lang) => template.replaceAll('{lang}', lang)
+const STT_TIMEOUT_MS = 20_000
+const TTS_TIMEOUT_MS = 30_000
 const sttIds = {} // lang (or 'auto') -> Whisper modelId
 const ttsIds = {} // lang -> modelId
 
@@ -22,6 +28,10 @@ export async function initVoice(log = console.log) {
   if (!config.voice) return
   if (config.mock) {
     log('Voice: MOCK mode (fixed transcript, silent audio)')
+    return
+  }
+  if (remote()) {
+    log(`Voice: speech recognition and synthesis via qvac serve at ${config.audioUrl}`)
     return
   }
   sdk = await import('@qvac/sdk')
@@ -57,7 +67,8 @@ export async function initVoice(log = console.log) {
 // The first transcription and the first synthesis on a fresh model are much slower (GPU kernels, buffers),
 // so run both once per language at startup instead of making the first real question wait for it.
 export async function warmUpVoice(log = console.log) {
-  if (!config.voice || config.mock) return
+  // With AUDIO_URL the models live in qvac serve, which loads and warms them itself
+  if (!config.voice || config.mock || remote()) return
   const t = performance.now()
   const silence = wavFromInt16(new Int16Array(16000), 16000) // 1 s
   for (const lang of Object.keys(sttIds)) await transcribeWav(silence, lang).catch(() => {})
@@ -155,6 +166,7 @@ function wavFromInt16(samples, rate) {
 
 async function transcribeWav(wav, lang, mockText) {
   if (config.mock) return mockText || config.mockTranscript
+  if (remote()) return transcribeRemote(wav, lang)
   // The SDK reads audio from a file path
   const file = path.join(os.tmpdir(), `home-router-${crypto.randomUUID()}.wav`)
   fs.writeFileSync(file, wav)
@@ -177,10 +189,63 @@ const speakable = (text) =>
 
 async function speak(text, lang) {
   if (config.mock) return wavFromInt16(new Int16Array(8000), 16000)
+  if (remote()) return speakRemote(speakable(text), lang)
   const r = sdk.textToSpeech({ modelId: ttsIds[lang] || Object.values(ttsIds)[0], text: speakable(text), inputType: 'text', stream: false })
   const samples = await r.buffer
   const rate = (await r.sampleRate) ?? 44100
   return wavFromInt16(samples, rate)
+}
+
+// ---- audio through qvac serve (AUDIO_URL) ----------------------------------------
+
+async function transcribeRemote(wav, lang) {
+  const form = new FormData()
+  form.append('model', fillLang(config.sttAlias, lang))
+  form.append('response_format', 'json')
+  form.append('file', new Blob([wav], { type: 'audio/wav' }), 'speech.wav')
+  let res
+  try {
+    res = await fetch(`${config.audioUrl}/audio/transcriptions`, {
+      method: 'POST',
+      headers: authHeaders(),
+      body: form,
+      signal: AbortSignal.timeout(STT_TIMEOUT_MS),
+    })
+  } catch (err) {
+    if (err.name === 'TimeoutError') throw new Error(`speech recognition server did not answer within ${STT_TIMEOUT_MS / 1000} s`)
+    throw new Error(`speech recognition server unreachable: ${err.message}`)
+  }
+  if (!res.ok) throw new Error(`speech recognition server returned ${res.status}: ${(await res.text()).slice(0, 200)}`)
+  const { text } = await res.json()
+  return String(text ?? '').trim()
+}
+
+// qvac serve answers with a complete WAV (16-bit mono PCM at the engine's rate, 44.1 kHz for Supertonic):
+// the same bytes wavFromInt16() builds for the in-process voice, so it is returned unchanged.
+// The request is never aborted: qvac serve cancels a synthesis when its client disconnects, and a cancelled
+// Supertonic run leaves its TTS engine broken until restart. After the timeout the caller gets an error,
+// while the request runs to the end in the background and its audio is dropped.
+async function speakRemote(text, lang) {
+  const request = fetch(`${config.audioUrl}/audio/speech`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify({ model: `tts-${lang}`, input: text, voice: fillLang(config.ttsVoice, lang), response_format: 'wav' }),
+  }).then(async (res) => {
+    const body = Buffer.from(await res.arrayBuffer())
+    if (!res.ok) throw new Error(`speech synthesis server returned ${res.status}: ${body.toString('utf8', 0, 200)}`)
+    if (body.length < 44 || body.toString('ascii', 0, 4) !== 'RIFF') throw new Error('speech synthesis server did not return a WAV file')
+    return body
+  })
+  request.catch(() => {}) // a late failure after the timeout is not an unhandled rejection
+  let timer
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`speech synthesis server did not answer within ${TTS_TIMEOUT_MS / 1000} s`)), TTS_TIMEOUT_MS)
+  })
+  try {
+    return await Promise.race([request, timeout])
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 // ---- the request ------------------------------------------------------------

@@ -20,6 +20,9 @@ function now() {
   return `Current local date and time (${tz}): ${date}, ${time}. Use it for any question about the date or time; never guess them.`
 }
 
+// Authorization for qvac serve (also used by the voice when AUDIO_URL is set)
+export const authHeaders = () => (config.llmKey ? { Authorization: `Bearer ${config.llmKey}` } : {})
+
 export async function streamChat({ messages, onToken, system = SYSTEM }) {
   if (config.mock) return mockStream(messages, onToken)
 
@@ -28,7 +31,7 @@ export async function streamChat({ messages, onToken, system = SYSTEM }) {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      ...(config.llmKey ? { Authorization: `Bearer ${config.llmKey}` } : {}),
+      ...authHeaders(),
     },
     body: JSON.stringify({
       model: config.llmModel,

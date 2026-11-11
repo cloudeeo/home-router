@@ -55,6 +55,12 @@ export const config = {
   sttGpu: env.STT_GPU === '1',
   ttsModel: env.TTS_MODEL || 'TTS_MULTILINGUAL_SUPERTONIC3_Q8_0',
   voiceLangs: (env.VOICE_LANGS || 'it,fr').split(',').map((s) => s.trim()),
+  // AUDIO_URL (e.g. http://127.0.0.1:11434/v1) sends speech recognition and synthesis to qvac serve's
+  // OpenAI-compatible audio endpoints instead of loading Whisper and Supertonic here (frees their VRAM).
+  // The key is the LLM key above. {lang} is replaced by the device language.
+  audioUrl: env.AUDIO_URL ? env.AUDIO_URL.replace(/\/$/, '') : null,
+  sttAlias: env.STT_ALIAS || 'whisper-{lang}',
+  ttsVoice: env.TTS_VOICE || '{lang}',
   // Supertonic voice and speed per language, e.g. VOICE_IT=M1:1.2
   voices: Object.fromEntries(['it', 'fr', 'en'].map((l) => {
     const [voice, speed] = (env[`VOICE_${l.toUpperCase()}`] || 'F1:1.2').split(':')
